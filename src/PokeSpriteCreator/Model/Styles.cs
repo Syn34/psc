@@ -75,10 +75,10 @@ namespace PokeSpriteCreator.Model
                 Palette = new[] { C(16,16,16), C(255,255,255), C(255,224,200), C(240,184,144), C(192,128,96), C(224,64,56), C(152,32,40), C(80,128,224), C(40,64,152),
                                   C(248,200,56), C(72,168,88), C(176,112,72), C(104,72,56), C(208,208,216), C(120,120,136) },
                 Notes = "Taller proportions, darker outlines, more detail." },
-            new GenStyle { Gen = 5, Games = "Black / White / Black 2 / White 2", FrontSize = 96, BackSize = 96, BackFrames = 5, OwW = 32, OwH = 32, MaxColors = 15,
+            new GenStyle { Gen = 5, Games = "Black / White / Black 2 / White 2", FrontSize = 80, BackSize = 80, BackFrames = 5, OwW = 32, OwH = 32, MaxColors = 15,
                 Palette = new[] { C(24,24,32), C(255,255,255), C(255,232,208), C(240,192,152), C(200,136,104), C(232,80,64), C(160,40,48), C(88,144,232), C(48,72,168),
                                   C(248,208,72), C(80,184,104), C(184,120,80), C(112,80,64), C(216,216,224), C(128,128,144) },
-                Notes = "Larger, more detailed sprites with dark coloured outlines." },
+                Notes = "Same size as Gen 4 but more detail: dark coloured outlines and strong two-tone shading." },
         };
 
         public static GenStyle Get(int gen) { return All.FirstOrDefault(s => s.Gen == gen) ?? All[2]; }

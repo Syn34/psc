@@ -247,7 +247,7 @@ SIZES (native game size, or exactly 2x/3x/4x pixel-doubled):
   Gen 2  front 56x56   back 48x48            overworld frames 16x16
   Gen 3  front 64x64   back 64x64 x4 frames  overworld frames 16x32
   Gen 4  front 80x80   back 80x80 x5 frames  overworld frames 32x32
-  Gen 5  front 96x96   back 96x96 x5 frames  overworld frames 32x32
+  Gen 5  front 80x80   back 80x80 x5 frames  overworld frames 32x32
 A pose sets the canvas size, so if your poses use another size, draw the parts
 for them at that size too.
 
