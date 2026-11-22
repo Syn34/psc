@@ -135,7 +135,11 @@ namespace PokeSpriteCreator
                 var r = OverworldGenerator.Make(trainer, st, true, null);
                 string g = st.Name + ": ";
                 Check(r.Frames.Count == 16 && r.Frames.All(f => f.W == st.OwW && f.H == st.OwH), g + "16 frames of " + st.OwW + "x" + st.OwH);
-                Check(r.Frames.All(f => !f.Bounds().IsEmpty && f.Bounds().Bottom == st.OwH), g + "every frame stands on the bottom row");
+                bool big = st.OwW >= 32 && st.OwH >= 32;
+                // big (Gen 4/5) style: standing feet one row up, stepping foot on the bottom row; smaller styles stand on the bottom row
+                Check(Enumerable.Range(0, 4).All(dd => r.Frame(dd, 0).Bounds().Bottom == (big ? st.OwH - 1 : st.OwH)), g + "standing frames stand on the right row");
+                Check(!big || Enumerable.Range(0, 4).All(dd => r.Frame(dd, 1).Bounds().Bottom == st.OwH && r.Frame(dd, 1).Bounds().Top == r.Frame(dd, 0).Bounds().Top - 1), g + "steps bob up a pixel and reach the bottom row");
+                Check(!big || r.Frame(OverworldGenerator.Down, 0).Bounds().Height >= 27, g + "Gen 4/5 figure is about 29 pixels tall (" + r.Frame(0, 0).Bounds().Height + ")");
                 var colorsUsed = new HashSet<int>(); foreach (var f in r.Frames) colorsUsed.UnionWith(f.Colors());
                 Check(st.Greyscale ? colorsUsed.IsSubsetOf(st.Palette) : colorsUsed.Count <= st.MaxColors, g + "within the colour limit (" + colorsUsed.Count + ")");
                 for (int s = 0; s < 4; s++) Check(r.Frame(OverworldGenerator.Right, s).SameAs(r.Frame(OverworldGenerator.Left, s).FlipH()), g + "right is the mirror of left, step " + s);

@@ -34,7 +34,10 @@ exports the sprite the way the games would. Light and dark mode.
 
 Made from a trainer front sprite every time you save it, or when you click **Update now**.
 
-- **Size**: the style's overworld frame size: Gen 1–2 16×16, Gen 3 16×32, Gen 4–5 32×32.
+- **Size**: the style's overworld frame size: Gen 1–2 16×16, Gen 3 16×32, Gen 4–5 32×32. Gen 4/5 follow the Gen 5 look
+  (measured from real Gen 5 walking sprites): about 29 pixels tall, a big round head (~62% of the height) with the hair
+  framing a smaller face, a small body, standing on the second-to-last row; a step lifts the body a pixel while the stepping
+  foot reaches the bottom row.
 - **How**: the head keeps the trainer's hair shape (shrunk from the sprite); the body is a clean overworld-style body coloured
   with the trainer's own colours, picked out of the sprite: hair (light and dark), skin, jacket/shirt (with the inner shirt
   down the middle), trousers, shoes, and a headband or visor if there is one. So it works whatever pose the battle sprite has.

@@ -18,7 +18,7 @@ namespace PokeSpriteCreator.Model
     /// <summary>The colours picked out of a trainer sprite for its overworld sprite.</summary>
     public class TrainerColors
     {
-        public int Outline, HairLight, HairDark, Skin, Torso, Inner, Legs, Shoes;
+        public int Outline, HairLight, HairMid, HairDark, Skin, Torso, Inner, Legs, Shoes;
         /// <summary>A headband / visor / hat-band colour, or 0.</summary>
         public int Band;
     }
@@ -62,13 +62,17 @@ namespace PokeSpriteCreator.Model
                 var head = Head(headSrc, g, col, dir, symmetric && (dir == Down || dir == Up));
                 for (int step = 0; step < 4; step++)
                 {
-                    var fig = new PixelImage(g.MaxW, g.CharH);
-                    Body(fig, g, col, dir == Right ? Left : dir, step, symmetric && (dir == Down || dir == Up));
+                    // the figure has a spare row above (for the walking bob) and below (for the stepping foot)
+                    var fig = new PixelImage(g.MaxW, g.CharH + 2);
+                    Body(fig, g, col, dir == Right ? Left : dir, step, symmetric && (dir == Down || dir == Up), 1);
+                    int bob = g.Big && (step == 1 || step == 3) ? 1 : 0;
                     int hx = (g.MaxW - head.W) / 2 + ((dir == Left || dir == Right) && g.MaxW > 16 ? -1 : 0);
-                    fig.Blit(head, Math.Max(0, hx), 0);
+                    fig.Blit(head, Math.Max(0, hx), 1 - bob);
                     if (dir == Right) fig = fig.FlipH();
                     var f = new PixelImage(st.OwW, st.OwH);
-                    f.Blit(fig, (st.OwW - fig.W) / 2, st.OwH - fig.H);
+                    // standing feet on the bottom row (big style: one row up, so a stepping foot can reach the bottom row)
+                    int standRow = g.Big ? st.OwH - 2 : st.OwH - 1;
+                    f.Blit(fig, (st.OwW - fig.W) / 2, standRow - g.CharH);
                     res.Frames.Add(f);
                 }
             }
@@ -82,20 +86,24 @@ namespace PokeSpriteCreator.Model
 
         class Geometry
         {
+            public bool Big;
             public int MaxW, CharH, HeadW, HeadH, TorsoW, TorsoH, LegW;
             public int HeadBottom { get { return HeadH - 1; } }
             public Geometry(GenStyle st, PixelImage srcHead)
             {
+                // Gen 4/5 (32x32): about 29 tall with a head ~62% of that (measured from Gen 5 sprites); smaller styles keep smaller heads
+                Big = st.OwW >= 32 && st.OwH >= 32;
                 bool tiny = st.OwH <= 16;
-                CharH = tiny ? st.OwH : Math.Min(st.OwH, (int)Math.Round(st.OwH * 0.84));
-                MaxW = st.OwW <= 16 ? st.OwW : Math.Min(st.OwW, 20);
-                HeadH = Math.Max(6, (int)Math.Round(CharH * 0.5));                        // with outline
+                CharH = Big ? st.OwH - 3 : tiny ? st.OwH : st.OwH - 6;
+                MaxW = Big ? Math.Min(st.OwW, 22) : st.OwW;
+                HeadH = Math.Max(6, (int)Math.Round(CharH * (Big ? 0.62 : tiny ? 0.5 : 0.54)));     // with outline
                 double aspect = srcHead.W / (double)Math.Max(1, srcHead.H);
-                HeadW = Clamp((int)Math.Round((HeadH - 2) * Math.Min(1.25, Math.Max(0.85, aspect))) + 2, 6, MaxW);
+                HeadW = Clamp((int)Math.Round((HeadH - 2) * Math.Min(1.15, Math.Max(0.9, aspect))) + 2, 6, Big ? MaxW - 2 : MaxW);
                 if (HeadW % 2 != MaxW % 2) HeadW--;                                     // so it centres exactly
                 int bodyH = CharH - HeadH + 1;                                             // shares a row with the head
                 TorsoH = Math.Max(3, (int)Math.Round(bodyH * 0.5));
-                TorsoW = Clamp(HeadW - 2 - (HeadW % 2 == 1 ? 1 : 0), 5, MaxW - 4);
+                TorsoW = Clamp(HeadW - (Big ? 8 : 2) - (HeadW % 2 == 1 ? 1 : 0), 5, MaxW - 6);
+                if (TorsoW % 2 != MaxW % 2) TorsoW--;
                 LegW = Math.Max(3, (TorsoW + 1) / 2);
             }
         }
@@ -187,9 +195,12 @@ namespace PokeSpriteCreator.Model
             if (hair.Count == 0) hair.Add(Top(top, x => x != 0, c.Outline));
             int main = hair[0];
             var fam = hair.Where(h => (HueDiff(h, main) < 30 && (Sat(h) >= 0.15) == (Sat(main) >= 0.15)) || (Sat(h) < 0.15 && Sat(main) < 0.15)).ToList();
-            c.HairLight = fam.OrderByDescending(PixelImage.Luma).First();
-            c.HairDark = fam.Count > 1 ? fam.OrderBy(PixelImage.Luma).First() : ColorTools.Adjust(main, 0, 0, -30);
+            var byLight = fam.OrderByDescending(PixelImage.Luma).ToList();
+            c.HairLight = byLight[0];
+            c.HairDark = byLight.Count > 1 ? byLight[byLight.Count - 1] : ColorTools.Adjust(main, 0, 0, -30);
             if (c.HairLight == c.HairDark) c.HairLight = ColorTools.Adjust(main, 0, 0, 20);
+            c.HairMid = byLight.Count > 2 ? byLight[1] : main == c.HairLight && byLight.Count == 2 ? c.HairLight : main;
+            if (byLight.Count == 2) c.HairLight = ColorTools.Adjust(c.HairLight, 0, 0, 16);
 
             // a headband / visor / hat band: a strong colour in the head that isn't hair or skin
             var headAll = Count(p.Head, 0, 0.75);
@@ -222,7 +233,7 @@ namespace PokeSpriteCreator.Model
             for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) img.Set(x, y, c);
         }
 
-        /// <summary>A box with an outline border, a fill and a darker right-hand column inside.</summary>
+        /// <summary>A box with an outline border and a fill; shade = darker inside columns on the right (and left when both).</summary>
         static void Box(PixelImage img, int x0, int y0, int x1, int y1, int fill, int outline, bool shadeRight = true, bool shadeBoth = false)
         {
             if (x1 < x0 || y1 < y0) return;
@@ -235,14 +246,20 @@ namespace PokeSpriteCreator.Model
             }
         }
 
-        /// <summary>The body for one direction (Down, Left or Up) and walking step (0 stand, 1 step, 2 stand, 3 other step).</summary>
-        static void Body(PixelImage fig, Geometry g, TrainerColors c, int dir, int step, bool symmetric)
+        /// <summary>
+        /// The body for one direction (Down, Left or Up) and walking step (0 stand, 1 step, 2 stand, 3 other step).
+        /// oy = the figure's top row; the standing feet are on row oy + CharH - 1. In the big (32×32) style a step
+        /// lifts the body a pixel while the stepping foot reaches one row lower and the other foot lifts, like Gen 4/5.
+        /// </summary>
+        static void Body(PixelImage fig, Geometry g, TrainerColors c, int dir, int step, bool symmetric, int oy)
         {
             int o = c.Outline, cx = g.MaxW / 2;
-            int torsoTop = g.HeadBottom, torsoBot = torsoTop + g.TorsoH;
-            int bottom = g.CharH - 1;
+            bool stepping = step == 1 || step == 3, first = step == 1;
+            int bob = g.Big && stepping ? 1 : 0;
+            int torsoTop = oy + g.HeadBottom - bob, torsoBot = torsoTop + g.TorsoH;
+            int bottom = oy + g.CharH - 1;                       // standing feet
             bool side = dir == Left;
-            int tw = side ? Math.Max(5, (int)Math.Round(g.TorsoW * 0.75)) : g.TorsoW;
+            int tw = side ? Math.Max(5, (int)Math.Round(g.TorsoW * 0.72)) : g.TorsoW;
             int tx0 = cx - tw / 2, tx1 = tx0 + tw - 1;
             if (side && g.MaxW > 16) { tx0++; tx1++; }
 
@@ -251,18 +268,24 @@ namespace PokeSpriteCreator.Model
             {
                 int lx0 = tx0 + (tw >= 8 ? 1 : 0), rx1 = tx1 - (tw >= 8 ? 1 : 0);
                 int lw = Math.Max(2, Math.Min(g.LegW, (rx1 - lx0 + 1) / 2));     // the two legs meet without overlapping
-                int leftLift = step == 3 ? 1 : 0, rightLift = step == 1 ? 1 : 0;
-                Leg(fig, lx0, lx0 + lw - 1, torsoBot, bottom - leftLift, c);
-                Leg(fig, rx1 - lw + 1, rx1, torsoBot, bottom - rightLift, c);
+                int leftBot = bottom, rightBot = bottom;
+                if (stepping)
+                {
+                    int down = g.Big ? bottom + 1 : bottom, up = g.Big ? bottom - 2 : bottom - 1;
+                    if (first) { rightBot = down; leftBot = up; } else { leftBot = down; rightBot = up; }
+                }
+                Leg(fig, lx0, lx0 + lw - 1, torsoBot, leftBot, c, false, g.Big);
+                Leg(fig, rx1 - lw + 1, rx1, torsoBot, rightBot, c, false, g.Big);
             }
             else
             {
                 int lw = Math.Max(3, g.LegW);
-                int lx = cx - lw / 2 + 1;
-                int spread = step == 1 || step == 3 ? Math.Max(1, lw / 2) : 0;
+                int lx = cx - lw / 2 + (g.MaxW > 16 ? 1 : 0);
+                int spread = stepping ? Math.Max(1, lw / 2) : 0;
+                int frontBot = stepping && g.Big ? bottom + 1 : bottom, backBot = stepping && g.Big ? bottom - 1 : bottom;
                 // back leg (darker) then front leg (facing left, so forward is to the left)
-                Leg(fig, lx + spread, lx + spread + lw - 1, torsoBot, bottom, c, true);
-                Leg(fig, lx - spread, lx - spread + lw - 1, torsoBot, bottom, c);
+                Leg(fig, lx + spread, lx + spread + lw - 1, torsoBot, backBot, c, true, g.Big);
+                Leg(fig, lx - spread, lx - spread + lw - 1, torsoBot, frontBot, c, false, g.Big);
             }
 
             // torso, with the inner shirt showing down the middle when facing down
@@ -270,25 +293,28 @@ namespace PokeSpriteCreator.Model
             if (dir == Down && c.Inner != 0 && tw >= 6)
                 Fill(fig, cx - 1, torsoTop + 1, cx, torsoBot - 1, c.Inner);
 
-            // arms with hands
-            int armBot = Math.Min(bottom - 1, torsoBot + 1);
+            // arms with hands; they swing a little when walking
+            int armBot = Math.Min(bottom - 1, torsoBot + (g.Big ? 2 : 1));
             if (!side)
             {
-                Arm(fig, tx0 - 2, tx0, torsoTop + 1, armBot, c);
-                Arm(fig, tx1, tx1 + 2, torsoTop + 1, armBot, c);
+                int la = stepping ? (first ? 1 : -1) : 0;
+                Arm(fig, tx0 - 2, tx0, torsoTop + 1, armBot + la, c);
+                Arm(fig, tx1, tx1 + 2, torsoTop + 1, armBot - la, c);
             }
             else
             {
-                int swing = step == 1 ? 1 : step == 3 ? -1 : 0;
-                int ax = cx + swing;
+                int swing = stepping ? (first ? 1 : -1) : 0;
+                int ax = cx + swing - (g.MaxW > 16 ? 0 : 1);
                 Arm(fig, ax, ax + 2, torsoTop + 1, armBot, c);
             }
         }
 
-        static void Leg(PixelImage fig, int x0, int x1, int top, int bottom, TrainerColors c, bool back = false)
+        static void Leg(PixelImage fig, int x0, int x1, int top, int bottom, TrainerColors c, bool back, bool big)
         {
-            Box(fig, x0, top, x1, bottom, back ? Shade(c.Legs) : c.Legs, c.Outline, false);
-            if (bottom - top >= 3 && x1 - x0 >= 2) Fill(fig, x0 + 1, bottom - 1, x1 - 1, bottom - 1, back ? Shade(c.Shoes) : c.Shoes);
+            int legC = back ? Shade(c.Legs) : c.Legs, shoeC = back ? Shade(c.Shoes) : c.Shoes;
+            Box(fig, x0, top, x1, bottom, legC, c.Outline, false);
+            int shoeRows = big && bottom - top >= 5 ? 2 : 1;
+            if (bottom - top >= 3 && x1 - x0 >= 2) Fill(fig, x0 + 1, bottom - shoeRows, x1 - 1, bottom - 1, shoeC);
         }
 
         static void Arm(PixelImage fig, int x0, int x1, int top, int bottom, TrainerColors c)
@@ -297,72 +323,118 @@ namespace PokeSpriteCreator.Model
             if (bottom - top >= 3) fig.Set(x0 + 1, bottom - 1, c.Skin);
         }
 
-        /// <summary>The head for one direction: the trainer's hair shape, with the face (down), side face (left/right) or all hair (up).</summary>
+        /// <summary>
+        /// The head for one direction: a big round head keeping the trainer's hair shape, with the face (down),
+        /// side face (left/right) or all hair (up). Hair is outlined in a dark hair colour, the face in the outline colour.
+        /// </summary>
         static PixelImage Head(PixelImage srcHead, Geometry g, TrainerColors c, int dir, bool symmetric)
         {
             int hw = g.HeadW - 2, hh = g.HeadH - 2;
-            if (dir == Left || dir == Right) hw = Math.Max(4, (int)Math.Round(hw * 0.9));
+            bool side = dir == Left || dir == Right;
+            if (side) hw = Math.Max(4, hw - (g.Big ? 1 : 0));
             var shrunk = Shrink(srcHead, hw, hh);
-            // solid silhouette: fill each row between its first and last pixel; the lower part is at least face-wide
+            int faceTop = Math.Max(2, (int)Math.Round(hh * (g.Big ? 0.56 : 0.45)));
+
+            // silhouette: a round head, plus the hair shape from the sprite (spikes, buns, pigtails) above the face
             var mask = new bool[hw, hh];
+            double rx = hw / 2.0, ry = hh / 2.0;
             for (int y = 0; y < hh; y++)
             {
                 int a = -1, z = -1;
                 for (int x = 0; x < hw; x++) if (shrunk.Get(x, y) != 0) { if (a < 0) a = x; z = x; }
-                if (y >= hh / 3) { a = a < 0 ? 1 : Math.Min(a, 1); z = Math.Max(z, hw - 2); }
-                for (int x = Math.Max(0, a); x <= z && a >= 0; x++) mask[x, y] = true;
+                for (int x = 0; x < hw; x++)
+                {
+                    double nx = (x + 0.5 - rx) / rx, ny = (y + 0.5 - ry) / ry;
+                    bool round = nx * nx + ny * ny <= 1.08;
+                    bool hairShape = a >= 0 && x >= a && x <= z && y < faceTop;
+                    mask[x, y] = round || hairShape;
+                }
             }
             if (symmetric)
                 for (int y = 0; y < hh; y++)
                     for (int x = 0; x < hw; x++) if (mask[x, y]) mask[hw - 1 - x, y] = true;
 
+            // hair in three tones following the light and shade of the sprite's hair; darker towards the bottom
             var head = new PixelImage(hw, hh);
-            double mid = (PixelImage.Luma(c.HairLight) + PixelImage.Luma(c.HairDark)) / 2;
+            double l1 = PixelImage.Luma(c.HairLight), l2 = PixelImage.Luma(c.HairMid), l3 = PixelImage.Luma(c.HairDark);
             for (int y = 0; y < hh; y++)
                 for (int x = 0; x < hw; x++)
                 {
                     if (!mask[x, y]) continue;
                     int s = shrunk.Get(x, y);
-                    bool light = s != 0 && PixelImage.Luma(s) >= mid && y < hh * (dir == Down ? 0.6 : 0.4);   // no face details on the back of the head
-                    head.Set(x, y, light ? c.HairLight : c.HairDark);
+                    int col = c.HairMid;
+                    if (s != 0 && y < faceTop)
+                    {
+                        double l = PixelImage.Luma(s);
+                        col = Math.Abs(l - l1) < Math.Abs(l - l2) ? c.HairLight : (Math.Abs(l - l3) < Math.Abs(l - l2) ? c.HairDark : c.HairMid);
+                        if (l > 0.85 && dir != Down) col = c.HairLight;   // skin/eyes don't show from behind
+                    }
+                    if (y >= hh - 2 || (dir == Up && y >= faceTop + 1)) col = c.HairDark;
+                    head.Set(x, y, col);
                 }
             if (symmetric)
                 for (int y = 0; y < hh; y++)
                     for (int x = hw / 2; x < hw; x++) head.Set(x, y, head.Get(hw - 1 - x, y));
 
-            int faceTop = Math.Max(2, (int)Math.Round(hh * 0.42));
+            int skinShade = ColorTools.Adjust(c.Skin, 0, -25, -10);
             int eyeH = hh >= 10 ? 2 : 1;
-            if (c.Band != 0 && faceTop >= 3)
-                for (int x = 0; x < hw; x++) if (mask[x, faceTop - 1]) head.Set(x, faceTop - 1, c.Band);
+            int mid2 = hw - 1;  // for symmetric fringe: columns x and hw-1-x match
             if (dir == Down)
             {
+                int fx0 = g.Big ? Math.Max(2, (int)Math.Round(hw * 0.17)) : 1, fx1 = hw - 1 - fx0;   // hair frames the face
                 for (int y = faceTop; y < hh; y++)
-                    for (int x = 1; x < hw - 1; x++) if (mask[x, y]) head.Set(x, y, c.Skin);
-                int cxm = hw / 2;
-                int e1 = hw >= 8 ? cxm - 2 : cxm - 1, e2 = hw >= 8 ? cxm + 1 : cxm;
-                for (int k = 0; k < eyeH; k++) { head.Set(e1, faceTop + 1 + k, c.Outline); head.Set(e2, faceTop + 1 + k, c.Outline); }
+                    for (int x = fx0; x <= fx1; x++)
+                    {
+                        if (!mask[x, y]) continue;
+                        if (y == hh - 1 && (x == fx0 || x == fx1)) continue;           // rounded chin
+                        // a fringe: hair points hanging over the top of the face
+                        int d = Math.Min(x - fx0, fx1 - x);
+                        if (y == faceTop && g.Big && d % 3 != 1) continue;
+                        head.Set(x, y, y == hh - 1 ? skinShade : c.Skin);
+                    }
+                int e1 = fx0 + (g.Big ? 2 : 1), e2 = fx1 - (g.Big ? 2 : 1);
+                if (e2 - e1 < 2) { e1 = hw / 2 - 1; e2 = hw - 1 - e1; }
+                int ey = faceTop + (g.Big ? 2 : 1);
+                for (int k = 0; k < eyeH; k++) { head.Set(e1, ey + k, c.Outline); head.Set(e2, ey + k, c.Outline); }
+                if (g.Big) { head.Set(e1 - 1, ey + eyeH - 1, PixelImage.Rgb(248, 248, 248)); head.Set(e2 + 1, ey + eyeH - 1, PixelImage.Rgb(248, 248, 248)); }
             }
-            else if (dir == Left || dir == Right)
+            else if (side)
             {
                 // drawn facing left; facing right is the mirror of the whole figure
-                int faceRight = Math.Max(2, (int)Math.Round(hw * 0.5));
+                int faceRight = Math.Max(2, (int)Math.Round(hw * 0.55));
                 for (int y = faceTop; y < hh; y++)
-                    for (int x = 0; x <= faceRight; x++) if (mask[x, y]) head.Set(x, y, c.Skin);
-                for (int k = 0; k < eyeH; k++) head.Set(1, faceTop + 1 + k, c.Outline);
+                    for (int x = 0; x <= faceRight; x++)
+                    {
+                        if (!mask[x, y]) continue;
+                        if (y == faceTop && g.Big && x % 3 != 1) continue;               // fringe
+                        head.Set(x, y, y == hh - 1 ? skinShade : c.Skin);
+                    }
+                int ex = g.Big ? 3 : 1, ey = faceTop + (g.Big ? 2 : 1);
+                for (int k = 0; k < eyeH; k++) head.Set(ex, ey + k, c.Outline);
+                if (g.Big) head.Set(ex - 1, ey + eyeH - 1, PixelImage.Rgb(248, 248, 248));
             }
-            return OutlineAround(head, c.Outline);
+            if (c.Band != 0 && faceTop >= 3)
+                for (int x = 0; x < hw; x++) if (mask[x, faceTop - 1]) head.Set(x, faceTop - 1, c.Band);
+            return OutlineHead(head, c, faceTop);
         }
 
-        /// <summary>Adds a one-pixel outline around the outside (the picture grows by 1 on every side).</summary>
-        static PixelImage OutlineAround(PixelImage img, int outline)
+        /// <summary>One-pixel outline around the outside: dark hair colour around the hair, the outline colour around the face.</summary>
+        static PixelImage OutlineHead(PixelImage img, TrainerColors c, int faceTop)
         {
             var r = new PixelImage(img.W + 2, img.H + 2);
             r.Blit(img, 1, 1);
             var copy = r.Clone();
+            int hairLine = PixelImage.Luma(c.HairDark) < 0.2 ? c.Outline : ColorTools.Adjust(c.HairDark, 0, 0, -45);
+            var hair = new HashSet<int> { c.HairLight, c.HairMid, c.HairDark };
             for (int y = 0; y < r.H; y++)
                 for (int x = 0; x < r.W; x++)
-                    if (copy.Get(x, y) == 0 && (copy.Get(x - 1, y) != 0 || copy.Get(x + 1, y) != 0 || copy.Get(x, y - 1) != 0 || copy.Get(x, y + 1) != 0))
-                        r.Set(x, y, outline);
+                {
+                    if (copy.Get(x, y) != 0) continue;
+                    var nb = new[] { copy.Get(x - 1, y), copy.Get(x + 1, y), copy.Get(x, y - 1), copy.Get(x, y + 1) };
+                    if (nb.All(n => n == 0)) continue;
+                    bool byHair = nb.Where(n => n != 0).All(n => hair.Contains(n)) && y <= faceTop;
+                    r.Set(x, y, byHair ? hairLine : c.Outline);
+                }
             return r;
         }
 
