@@ -28,7 +28,9 @@ Pencil, eraser, fill (it can follow the outlines of every visible layer), colour
 recolour (click a colour to change it; Shift+click: on every layer) and mirror drawing. Layers (show/hide, order, rename,
 duplicate, merge), undo/redo, frame strip with animated preview, onion skin, copy a frame to all, overworld Left ↔ Right
 mirror, add/remove back-sprite frames. "Limit to 15 colours like Gen 5" (4 greys for Gen 1, 4 colours for Gen 2) shows and
-exports the sprite the way the games would. Light and dark mode.
+exports the sprite the way the games would. Going over the limit never changes the colours already in the sprite: the newest colour is shown (and
+exported) as the closest colour you already have, and the status bar says which. The colour picker always picks the real
+colour. Light and dark mode.
 
 ## Walking sprites (In-game sprites panel)
 

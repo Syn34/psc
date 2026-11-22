@@ -410,13 +410,15 @@ namespace PokeSpriteCreator.UI
 
         void Pick(Point p, MouseButtons b)
         {
-            var frames = S.Preview;
-            if (S.Frame >= frames.Count) return;
-            var img = frames[S.Frame];
+            // the real colour, not the colour-limited view (picking a merged colour would paint it in for real)
+            if (S.Frame >= D.FrameCount) return;
+            var img = D.Composite(S.Frame);
             if (!img.Inside(p.X, p.Y)) return;
             int c = img.Get(p.X, p.Y);
             if (b == MouseButtons.Left) E.SetPrimary(c); else E.SetSecondary(c);
-            E.Say("Picked " + PixelImage.Hex(c) + (c == 0 ? " (drawing with transparent erases)" : ""));
+            int shown;
+            string merged = D.LimitPalette && D.LastMerged.TryGetValue(c, out shown) ? " (over the colour limit, so it's shown as " + PixelImage.Hex(shown) + ")" : "";
+            E.Say("Picked " + PixelImage.Hex(c) + (c == 0 ? " (drawing with transparent erases)" : merged));
         }
 
         void Fill(Point p, int color)

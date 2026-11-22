@@ -184,6 +184,47 @@ namespace PokeSpriteCreator
             Check(ow.Layers[0].Frames[8].Get(31 - 12, 22) == PixelImage.Rgb(255, 0, 255), "a change on a left frame lands mirrored on the right frame");
             Check(es.PendingChange != null && es.PendingChange.IsEmpty, "after copying, the frame has no pending change");
 
+            // ---- going one colour over the limit merges only the closest pair, nothing else
+            {
+                var pal16 = new[] { 0x000000, 0x292929, 0x212942, 0x2D5A84, 0x634A42, 0x5A5A6B, 0x3184A5, 0x29A59C, 0xCE5252,
+                                    0xDEA57B, 0x94949C, 0xCECEDE, 0xEFEFFF, 0xFFD6BD, 0xF0C098, 0xFFD2B8 };   // last = a near copy of FFD6BD
+                var over = new PixelImage(16, 4);
+                for (int i = 0; i < 16; i++) for (int y = 0; y < 4; y++) over.Set(i, y, PixelImage.Rgb((pal16[i] >> 16) & 255, (pal16[i] >> 8) & 255, pal16[i] & 255));
+                over.Set(15, 0, over.Get(13, 0)); over.Set(15, 1, over.Get(13, 0));   // the new colour is used less
+                var red = ColorTools.ReduceTogether(new List<PixelImage> { over }, 15)[0];
+                int changedCols = 0, wrong = 0;
+                for (int i = 0; i < 16; i++) for (int y = 0; y < 4; y++)
+                    if (red.Get(i, y) != over.Get(i, y)) { if (i == 15) changedCols++; else wrong++; }
+                Check(wrong == 0 && changedCols == 2 && red.Get(15, 3) == over.Get(13, 0) && red.Colors().Count == 15,
+                      "16 colours -> 15 merges only the near copy into its twin (other pixels changed: " + wrong + ")");
+            }
+
+            // ---- a sprite already at 15 colours gets a new one: only the new colour is merged, never the old ones
+            {
+                var nate = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); nate.Layers.Add(nate.NewLayer("Paint"));
+                var cols = new[] { 0x000000, 0x292929, 0x212942, 0x2D5A84, 0x634A42, 0x5A5A6B, 0x218C8C, 0x317BA5, 0xCE5252,
+                                   0xDEA57B, 0x94949C, 0xCECEDE, 0xEFEFFF, 0xFFD6BD, 0xF0C098 };
+                var px = nate.Layers[0].Frames[0];
+                for (int i = 0; i < 15; i++) for (int y = 0; y < 5; y++) px.Set(i, y, PixelImage.Rgb((cols[i] >> 16) & 255, (cols[i] >> 8) & 255, cols[i] & 255));
+                var nBefore = nate.FinalFrames(true)[0];
+                Check(nate.LastMerged.Count == 0 && nate.ColorOrder.Count == 15, "15 colours: nothing merged");
+                for (int y = 10; y < 13; y++) px.Set(40, y, PixelImage.Rgb(255, 0, 0));   // a brand-new red
+                var after = nate.FinalFrames(true)[0];
+                int touched = 0;
+                for (int y = 0; y < 5; y++) for (int i = 0; i < 15; i++) if (after.Get(i, y) != nBefore.Get(i, y)) touched++;
+                Check(touched == 0, "adding a 16th colour leaves every existing colour as it was (" + touched + " pixels changed)");
+                Check(nate.LastMerged.Count == 1 && nate.LastMerged.ContainsKey(PixelImage.Rgb(255, 0, 0)) && after.Get(40, 10) == PixelImage.Rgb(0xCE, 0x52, 0x52),
+                      "the new red is the one shown as its closest colour (#CE5252)");
+                var orderFile = Path.Combine(dir, "order.psc");
+                nate.Save(orderFile);
+                var reNate = SpriteDocument.Load(orderFile);
+                reNate.FinalFrames(true);
+                Check(reNate.ColorOrder.Take(15).SequenceEqual(nate.ColorOrder.Take(15)) && reNate.LastMerged.ContainsKey(PixelImage.Rgb(255, 0, 0)), "the colour order is saved, so reopening merges the same colour");
+                px.Set(14, 0, 0); for (int y = 0; y < 5; y++) px.Set(14, y, 0);   // remove a colour: the red fits again
+                nate.FinalFrames(true);
+                Check(nate.LastMerged.Count == 0, "removing a colour frees its place for the new one");
+            }
+
             // ---- tabs and comparing
             var et = new Editor(new Settings());
             var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));

@@ -108,10 +108,27 @@ namespace PokeSpriteCreator.UI
             int max = E.Doc.Style.MaxColors;
             _count.Text = used.Count + " / " + max;
             _count.ForeColor = used.Count > max ? Theme.Warn : Theme.Good;
+            string merges = "";
+            if (used.Count > max && E.Doc.LimitPalette && !E.Doc.Style.Greyscale)
+            {
+                var pv = E.Preview;   // works out which colours are over the limit
+                merges = string.Join(", ", E.Doc.LastMerged.Select(kv => PixelImage.Hex(kv.Key) + " is shown as " + PixelImage.Hex(kv.Value)).ToArray());
+            }
             _tip.SetToolTip(_count, used.Count > max
-                ? (E.Doc.LimitPalette ? "More colours than " + E.Doc.Style.Name + " allows; the view and export merge similar colours." : "More colours than " + E.Doc.Style.Name + " allows. Tick the limit box to merge them.")
+                ? (E.Doc.LimitPalette
+                    ? "More colours than " + E.Doc.Style.Name + " allows. Your other colours stay as they are; the newest colour" + (E.Doc.LastMerged.Count > 1 ? "s are" : " is") + " shown (and exported) as the closest colour already in the sprite: " + merges + ". Right-click a colour in this list to replace it with another, or turn the limit off."
+                    : "More colours than " + E.Doc.Style.Name + " allows. Tick the limit box to see it the way the game would.")
                 : "Within " + E.Doc.Style.Name + "'s colour limit.");
+            // say so once, when it starts (or the merged colours change)
+            if (merges != _lastMerges)
+            {
+                _lastMerges = merges;
+                if (merges.Length > 0)
+                    E.Say(used.Count + " colours, " + E.Doc.Style.Name + " allows " + max + ": " + merges + " (the closest colour already in the sprite). Nothing else is changed. Undo, or replace a colour you don't need, to keep it.");
+            }
         }
+
+        string _lastMerges = "";
 
         public void ApplyTheme() { _style.Invalidate(); _used.Invalidate(); RefreshUsed(); }
     }

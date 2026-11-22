@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;

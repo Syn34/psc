@@ -111,13 +111,43 @@ namespace PokeSpriteCreator.Model
         /// <summary>Applies one palette reduction to several images together (so every frame shares the same colours).</summary>
         public static List<PixelImage> ReduceTogether(IList<PixelImage> imgs, int max)
         {
+            Dictionary<int, int> merged;
+            return ReduceTogether(imgs, max, new List<int>(), out merged);
+        }
+
+        /// <summary>Keeps the sprite to 'max' colours without touching colours that were already there.
+        /// 'order' is the sprite's colours in the order they arrived (kept between calls by the document):
+        /// the first 'max' are shown as they are, and any newer colour is shown as the closest of those.
+        /// 'merged' = each colour that had to be changed -> the colour it's shown as.</summary>
+        public static List<PixelImage> ReduceTogether(IList<PixelImage> imgs, int max, List<int> order, out Dictionary<int, int> merged)
+        {
             var counts = new Dictionary<int, int>();
             foreach (var img in imgs) foreach (var c in img.Px) if (c != 0) { int n; counts.TryGetValue(c, out n); counts[c] = n + 1; }
+            UpdateOrder(order, counts, max);
+            merged = new Dictionary<int, int>();
             if (counts.Count <= max) return imgs.Select(i => i.Clone()).ToList();
-            var pal = MedianCut(counts, max);
+            var kept = order.Take(max).ToList();
+            var keep = new HashSet<int>(kept);
             var map = new Dictionary<int, int>();
-            foreach (var c in counts.Keys) map[c] = Nearest(c, pal);
+            foreach (var c in counts.Keys)
+            {
+                map[c] = keep.Contains(c) ? c : Nearest(c, kept);
+                if (map[c] != c) merged[c] = map[c];
+            }
             return imgs.Select(img => { var r = img.Clone(); for (int i = 0; i < r.Px.Length; i++) if (r.Px[i] != 0) r.Px[i] = map[r.Px[i]]; return r; }).ToList();
+        }
+
+        /// <summary>Drops colours no longer used and adds new ones at the end (most used first).
+        /// A fresh picture with too many colours starts with a median-cut choice so it reduces well.</summary>
+        static void UpdateOrder(List<int> order, Dictionary<int, int> counts, int max)
+        {
+            order.RemoveAll(c => !counts.ContainsKey(c));
+            var have = new HashSet<int>(order);
+            if (order.Count == 0 && counts.Count > max * 2)   // a picture with lots of colours (a few over: keep the most used)
+                foreach (var c in MedianCut(counts, max).Distinct().OrderByDescending(c => counts[c]))
+                    if (have.Add(c)) order.Add(c);
+            foreach (var kv in counts.Where(kv => !have.Contains(kv.Key)).OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key))
+                order.Add(kv.Key);
         }
 
         static List<int> MedianCut(Dictionary<int, int> counts, int max)

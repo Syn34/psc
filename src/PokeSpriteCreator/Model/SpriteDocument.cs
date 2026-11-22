@@ -41,6 +41,10 @@ namespace PokeSpriteCreator.Model
         public FrameLayout Layout;
         public List<Layer> Layers = new List<Layer>();
         public bool LimitPalette = true;
+        /// <summary>The sprite's colours in the order they were first used (see ColorTools.ReduceTogether).</summary>
+        public readonly List<int> ColorOrder = new List<int>();
+        /// <summary>After the colour limit was applied: each colour over the limit -> the colour it's shown as.</summary>
+        public Dictionary<int, int> LastMerged = new Dictionary<int, int>();
         public string FilePath;
         public bool Dirty;
         public List<string> Warnings = new List<string>();
@@ -130,7 +134,10 @@ namespace PokeSpriteCreator.Model
         public List<PixelImage> ApplyStyle(List<PixelImage> frames)
         {
             if (Style.Greyscale) return frames.Select(f => ColorTools.ToGreyscale4(f, Style.Palette)).ToList();
-            return ColorTools.ReduceTogether(frames, Style.MaxColors);
+            Dictionary<int, int> merged;
+            var r = ColorTools.ReduceTogether(frames, Style.MaxColors, ColorOrder, out merged);
+            LastMerged = merged;
+            return r;
         }
 
         public PixelImage BuildSheet(bool limit, int scale)
@@ -217,6 +224,7 @@ namespace PokeSpriteCreator.Model
             o["frameWidth"] = Layout.FrameW; o["frameHeight"] = Layout.FrameH;
             o["columns"] = Layout.Cols; o["rows"] = Layout.Rows;
             o["limitPalette"] = LimitPalette;
+            if (ColorOrder.Count > 0) o["colorOrder"] = ColorOrder.Select(c => (object)PixelImage.Hex(c)).ToList();
             var arr = new List<object>();
             foreach (var l in Layers)
             {
@@ -257,6 +265,10 @@ namespace PokeSpriteCreator.Model
             var d = new SpriteDocument(style, kind, o.GetString("sheet", "Walk"), lay);
             d.Name = o.GetString("name", "NEWTRAINER");
             d.LimitPalette = o.GetBool("limitPalette", true);
+            foreach (var h in (o.GetArray("colorOrder") ?? new List<object>()).OfType<string>())
+            {
+                try { d.ColorOrder.Add(PixelImage.ParseHex(h)); } catch { }
+            }
             var layers = o.GetArray("layers") ?? new List<object>();
             foreach (var item in layers.OfType<JsonObject>())
             {
