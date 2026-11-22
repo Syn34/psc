@@ -12,11 +12,11 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.1.2";
+        public const string Version = "0.2.0";
 
         readonly Editor E;
         readonly SpriteCanvas _canvas;
-        readonly PartsPanel _parts;
+        readonly DirectionsPanel _dirs;
         readonly LayersPanel _layers;
         readonly ColorPanel _colors;
         readonly FrameStrip _frames;
@@ -34,7 +34,6 @@ namespace PokeSpriteCreator.UI
             _openOnStart = openFile;
             Theme.Dark = settings.DarkMode;
             E = new Editor(settings);
-            E.Lib.EnsureFolders();
 
             Text = AppName;
             Font = Theme.UiFont;
@@ -49,12 +48,13 @@ namespace PokeSpriteCreator.UI
             center.Controls.Add(_canvas);
             center.Controls.Add(_frames);
 
-            _parts = new PartsPanel(E) { Dock = DockStyle.Left, Width = 340 };
-            var right = new Panel { Dock = DockStyle.Right, Width = 318, Tag = "panel" };
+            _dirs = new DirectionsPanel(E) { Dock = DockStyle.Right, Width = 318 };
+            var left = new Panel { Dock = DockStyle.Left, Width = 318, Tag = "panel" };
             _layers = new LayersPanel(E) { Dock = DockStyle.Fill };
             _colors = new ColorPanel(E) { Dock = DockStyle.Bottom };
-            right.Controls.Add(_layers);
-            right.Controls.Add(_colors);
+            left.Controls.Add(_layers);
+            left.Controls.Add(_colors);
+            _dirs.EditRequested += EditAsOverworld;
 
             var splitL = new Splitter { Dock = DockStyle.Left, Width = 4 };
             var splitR = new Splitter { Dock = DockStyle.Right, Width = 4 };
@@ -70,9 +70,9 @@ namespace PokeSpriteCreator.UI
 
             Controls.Add(center);
             Controls.Add(splitR);
-            Controls.Add(right);
+            Controls.Add(_dirs);
             Controls.Add(splitL);
-            Controls.Add(_parts);
+            Controls.Add(left);
             Controls.Add(_tools);
             Controls.Add(_menu);
             Controls.Add(_status);
@@ -96,9 +96,7 @@ namespace PokeSpriteCreator.UI
             _canvas.FitToWindow();
             if (!string.IsNullOrEmpty(_openOnStart)) OpenFile(_openOnStart);
             else if (Environment.GetEnvironmentVariable("PSC_NO_NEW_DIALOG") == null) BeginInvoke((Action)(() => NewSprite()));
-            int n = E.Lib.CountAll(), b = E.Lib.CountBuiltIn();
-            if (n == 0) E.Say((b > 0 ? b + " built-in parts. " : "") + "Add your own PNG parts to " + E.Lib.Root + " (Help > Parts folder guide). Free-hand drawing works without parts.");
-            else E.Say(n + " parts in " + E.Lib.Root + (b > 0 ? " + " + b + " built-in" : ""));
+            E.Say("Draw a sprite or bring in a picture (File > Import picture). Save a trainer front sprite to see it walking in game.");
         }
 
         // ------------------------------------------------------------------ menu & toolbar
@@ -109,16 +107,14 @@ namespace PokeSpriteCreator.UI
             var file = new ToolStripMenuItem("&File");
             file.DropDownItems.Add(Item("&New sprite…", Keys.Control | Keys.N, () => NewSprite()));
             file.DropDownItems.Add(Item("&Open…", Keys.Control | Keys.O, () => Open()));
+            file.DropDownItems.Add(Item("&Import picture as a new sprite…", Keys.Control | Keys.I, () => ImportAsNew()));
+            file.DropDownItems.Add(Item("Import picture as a &layer…", Keys.Control | Keys.Shift | Keys.I, () => ImportAsLayer()));
             _recentMenu = new ToolStripMenuItem("Open &recent");
             file.DropDownItems.Add(_recentMenu);
             file.DropDownItems.Add(new ToolStripSeparator());
             file.DropDownItems.Add(Item("&Save", Keys.Control | Keys.S, () => Save(false)));
             file.DropDownItems.Add(Item("Save &as…", Keys.Control | Keys.Shift | Keys.S, () => Save(true)));
             file.DropDownItems.Add(Item("&Export PNG…", Keys.Control | Keys.E, () => Export()));
-            file.DropDownItems.Add(new ToolStripSeparator());
-            file.DropDownItems.Add(Item("Open parts &folder", Keys.None, () => { try { Directory.CreateDirectory(E.Lib.Root); Process.Start(E.Lib.Root); } catch (Exception ex) { E.Say(ex.Message); } }));
-            file.DropDownItems.Add(Item("Change parts folder…", Keys.None, () => ChangePartsFolder()));
-            file.DropDownItems.Add(Item("Reload parts", Keys.F5, () => _parts.Reload()));
             file.DropDownItems.Add(new ToolStripSeparator());
             file.DropDownItems.Add(Item("E&xit", Keys.Alt | Keys.F4, () => Close()));
             file.DropDownOpening += (s, a) => FillRecent();
@@ -137,7 +133,7 @@ namespace PokeSpriteCreator.UI
             edit.DropDownOpening += (s, a) => { _undoItem.Enabled = E.CanUndo; _redoItem.Enabled = E.CanRedo; };
 
             var layer = new ToolStripMenuItem("&Layer");
-            layer.DropDownItems.Add(Item("New &paint layer", Keys.Control | Keys.Shift | Keys.N, () => E.AddPaintLayer()));
+            layer.DropDownItems.Add(Item("&New layer", Keys.Control | Keys.Shift | Keys.N, () => E.AddLayer()));
             layer.DropDownItems.Add(Item("&Duplicate", Keys.Control | Keys.J, () => E.DuplicateLayer()));
             layer.DropDownItems.Add(Item("&Rename…", Keys.F2, () => _layers.Rename()));
             layer.DropDownItems.Add(Item("Delete", Keys.None, () => E.DeleteLayer()));
@@ -145,9 +141,7 @@ namespace PokeSpriteCreator.UI
             layer.DropDownItems.Add(Item("Move &up", Keys.Control | Keys.OemCloseBrackets, () => E.MoveLayer(1)));
             layer.DropDownItems.Add(Item("Move do&wn", Keys.Control | Keys.OemOpenBrackets, () => E.MoveLayer(-1)));
             layer.DropDownItems.Add(new ToolStripSeparator());
-            layer.DropDownItems.Add(Item("&Convert to paint layer", Keys.None, () => E.ConvertToPaint()));
             layer.DropDownItems.Add(Item("&Merge down", Keys.Control | Keys.M, () => E.MergeDown()));
-            layer.DropDownItems.Add(Item("Reset part &colours", Keys.None, () => { if (E.CurrentPart == null) return; E.BeginChange(); E.CurrentPart.ResetColors(); E.LayersEdited(); }));
 
             _framesMenu = new ToolStripMenuItem("F&rames");
             _framesMenu.DropDownItems.Add(Item("&Next frame", Keys.Control | Keys.Right, () => { if (E.Doc != null) E.SelectFrame((E.Frame + 1) % E.Doc.FrameCount); }));
@@ -176,13 +170,49 @@ namespace PokeSpriteCreator.UI
             view.DropDownOpening += (s, a) => UpdateMenus();
 
             var help = new ToolStripMenuItem("&Help");
-            help.DropDownItems.Add(Item("&Parts folder guide", Keys.F1, () => ShowText("Parts folder guide", PartLibrary.Guide.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n") + "\r\nYour parts folder: " + E.Lib.Root + "\r\nBuilt-in parts: " + E.Lib.BuiltInRoot)));
+            help.DropDownItems.Add(Item("&How it works", Keys.F1, () => ShowText("How it works", HowItWorks)));
             help.DropDownItems.Add(Item("&Keyboard shortcuts", Keys.None, () => ShowText("Keyboard shortcuts", Shortcuts)));
-            help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, AppName + " " + Version + "\r\nA sprite maker for Pokémon fan games (trainer front & back sprites and overworld sheets, Gen 1 to Gen 5 styles).\r\nCompanion app for PokeCreator.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+            help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, AppName + " " + Version + "\r\nA sprite editor for Pokémon fan games (trainer front & back sprites and overworld sheets, Gen 1 to Gen 5 styles). Saving a trainer front sprite makes its overworld walking sprite.\r\nCompanion app for PokeCreator.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
             m.Items.AddRange(new ToolStripItem[] { file, edit, layer, _framesMenu, view, help });
             return m;
         }
+
+        const string HowItWorks =
+@"POKE SPRITE CREATOR
+
+1. MAKE OR BRING IN A SPRITE
+   File > New sprite: pick the style (Gen 1 to Gen 5) and the kind of sprite
+   (trainer front, trainer back or overworld sheet). Start from a blank canvas
+   or a picture (PNG, GIF or BMP).
+   File > Import picture as a new sprite does the same with the picture chosen.
+   File > Import picture as a layer adds a picture to the sprite you're editing.
+   Pictures are fitted to the canvas: empty space is trimmed and the feet are
+   kept on the bottom row; pixel-doubled art is shrunk; animated GIFs and strips
+   become frames of a back sprite; a 4 x 4 sheet becomes an overworld sheet.
+
+2. EDIT IT
+   Pencil, eraser, fill, colour picker, line, rectangle, ellipse, move,
+   recolour and mirror drawing, on as many layers as you like.
+   ""Limit to 15 colours"" shows the sprite the way the games would.
+
+3. SEE IT IN GAME
+   When you save a trainer front sprite, the panel on the right makes its
+   overworld walking sprite: facing down, left, right and up, with walking
+   steps, in the style's overworld size (Gen 1-2: 16x16, Gen 3: 16x32,
+   Gen 4-5: 32x32). The head keeps the trainer's hair shape and the body
+   uses the trainer's own colours (hair, skin, shirt, trousers, shoes and a
+   headband or visor if there is one).
+   * Symmetric front and back: both sides of the down and up views match.
+   * Up view hair from a back sprite: uses the back sprite's hair shape.
+   * Export sheet: saves the 4 x 4 sheet (trainer_NAME.png for
+     Graphics/Characters).
+   * Edit as overworld sprite: opens it as its own sheet to touch up.
+   For an overworld sheet the panel plays the sheet itself.
+
+4. EXPORT
+   File > Export PNG saves the sprite at 1x to 4x, to any file or straight into
+   a PokeCreator / Essentials game folder with the right file name.";
 
         const string Shortcuts =
 @"TOOLS
@@ -209,7 +239,7 @@ FRAMES
   Ctrl+C / Ctrl+V          copy / paste frame
 
 FILE
-  Ctrl+N new   Ctrl+O open   Ctrl+S save   Ctrl+E export   F5 reload parts";
+  Ctrl+N new   Ctrl+O open   Ctrl+I import picture   Ctrl+S save   Ctrl+E export";
 
         ToolStripMenuItem Item(string text, Keys keys, Action a)
         {
@@ -255,7 +285,7 @@ FILE
             t.Items.Add(new ToolStripSeparator());
             _mirrorBtn = new ToolStripButton("Mirror") { CheckOnClick = true, Image = Icons.Get("Mirror"), DisplayStyle = ToolStripItemDisplayStyle.ImageAndText, ToolTipText = "Mirror drawing left/right (S)" };
             _mirrorBtn.CheckedChanged += (s, a) => { E.Mirror = _mirrorBtn.Checked; _canvas.Invalidate(); };
-            _mergedBtn = new ToolStripButton("Fill sees all layers") { CheckOnClick = true, Checked = true, ToolTipText = "On: Fill stops at the outlines of everything you can see (fill in a pose outline). Off: Fill only looks at the paint layer." };
+            _mergedBtn = new ToolStripButton("Fill sees all layers") { CheckOnClick = true, Checked = true, ToolTipText = "On: Fill stops at the outlines of everything you can see (colour in line art on another layer). Off: Fill only looks at the selected layer." };
             _mergedBtn.CheckedChanged += (s, a) => E.SampleMerged = _mergedBtn.Checked;
             _gridBtn = new ToolStripButton("Grid") { CheckOnClick = true, Checked = E.Settings.ShowGrid, ToolTipText = "Pixel grid (Ctrl+G)" };
             _gridBtn.CheckedChanged += (s, a) => { E.Settings.ShowGrid = _gridBtn.Checked; _canvas.Invalidate(); };
@@ -280,13 +310,13 @@ FILE
         {
             { Tool.Pencil, "Pencil: draw pixels (left/right mouse = your two colours). Alt+click picks a colour." },
             { Tool.Eraser, "Eraser: clears pixels on the selected paint layer." },
-            { Tool.Fill, "Fill: fills an area. With \"Fill sees all layers\" it stops at the pose outline, so you can colour it in." },
+            { Tool.Fill, "Fill: fills an area. With \"Fill sees all layers\" it stops at outlines on any layer, so you can colour in line art." },
             { Tool.Picker, "Colour picker: click to take a colour from the sprite." },
             { Tool.Line, "Line: drag to draw a line (Shift = straight / 45°)." },
             { Tool.Rectangle, "Rectangle: drag to draw (Shift = filled)." },
             { Tool.Ellipse, "Ellipse: drag to draw (Shift = filled)." },
-            { Tool.Move, "Move: drag the selected layer (a part, or a paint layer's pixels). Arrow keys nudge 1 pixel." },
-            { Tool.Recolor, "Recolour: click a colour of the selected part to change it to your left colour. Shift+click changes it on every layer." },
+            { Tool.Move, "Move: drag the selected layer's pixels (Alt: this frame only). Arrow keys nudge 1 pixel." },
+            { Tool.Recolor, "Recolour: click a colour to change it to your left colour on the selected layer. Shift+click changes it on every layer." },
         };
 
         void AddTool(ToolStrip t, Tool tool, string name, string key)
@@ -331,7 +361,7 @@ FILE
             Theme.Apply(this);
             foreach (var kv in _toolButtons) kv.Value.Image = Icons.Get(kv.Value.Text == "Recolour" ? "Recolor" : kv.Value.Text);
             if (_mirrorBtn != null) _mirrorBtn.Image = Icons.Get("Mirror");
-            _parts.ApplyTheme(); _layers.ApplyTheme(); _colors.ApplyTheme();
+            _dirs.ApplyTheme(); _layers.ApplyTheme(); _colors.ApplyTheme();
             _canvas.Invalidate(); _frames.Invalidate(true);
             UpdateMenus();
         }
@@ -392,7 +422,7 @@ FILE
         void NewBlank(GenStyle st, SpriteKind k)
         {
             var d = new SpriteDocument(st, k, "Walk", st.DefaultLayout(k));
-            d.Layers.Add(d.NewPaintLayer("Paint"));
+            d.Layers.Add(d.NewLayer("Paint"));
             SetDoc(d);
         }
 
@@ -403,8 +433,7 @@ FILE
             if (d.Layers.Count > 0)
             {
                 // start with the top paint layer selected so drawing goes on top
-                int top = d.Layers.FindLastIndex(l => l is PaintLayer);
-                E.SelectLayer(top >= 0 ? top : d.Layers.Count - 1);
+                E.SelectLayer(d.Layers.Count - 1);
             }
             _canvas.FitToWindow();
             UpdateTitle();
@@ -421,17 +450,53 @@ FILE
             return true;
         }
 
-        void NewSprite()
+        void NewSprite(string picture = null)
         {
             if (!ConfirmDiscard()) return;
-            using (var d = new NewSpriteDialog(E.Lib, E.Settings))
+            using (var d = new NewSpriteDialog(E.Settings, picture))
             {
                 if (d.ShowDialog(this) != DialogResult.OK || d.Result == null) return;
                 E.Settings.LastGen = d.Result.Style.Gen;
                 E.Settings.LastKind = d.Result.Kind.ToString();
                 SetDoc(d.Result);
-                E.Say("New " + d.Result.Description + ". Pick parts on the left, or draw free-hand.");
+                E.Say("New " + d.Result.Description + "." + (d.Result.Kind == SpriteKind.Front ? " Save it (Ctrl+S) to see the trainer walking in game, on the right." : ""));
             }
+        }
+
+        /// <summary>File > Import picture as a new sprite: the New sprite dialog with the picture already chosen.</summary>
+        void ImportAsNew()
+        {
+            using (var ofd = new OpenFileDialog { Filter = ImageImport.Filter, Title = "Import a picture as a new sprite" })
+                if (ofd.ShowDialog(this) == DialogResult.OK) NewSprite(ofd.FileName);
+        }
+
+        /// <summary>File > Import picture as a layer: adds the picture to the current sprite on a new layer.</summary>
+        void ImportAsLayer()
+        {
+            if (E.Doc == null) return;
+            using (var ofd = new OpenFileDialog { Filter = ImageImport.Filter, Title = "Import a picture as a layer" })
+            {
+                if (ofd.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    var pics = ImageImport.LoadFrames(ofd.FileName);
+                    E.AddLayerFromFrames(Path.GetFileNameWithoutExtension(ofd.FileName), ImageImport.FramesFor(pics, E.Doc.Layout));
+                    E.Say("Added " + Path.GetFileName(ofd.FileName) + " as a layer" + (pics.Count > 1 ? " (" + Math.Min(pics.Count, E.Doc.FrameCount) + " frames)" : "") + ". Use the Move tool to line it up.");
+                }
+                catch (Exception ex) { MessageBox.Show(this, "Couldn't read that picture:\r\n" + ex.Message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            }
+        }
+
+        /// <summary>Directions panel > Edit as overworld sprite: the walking sprite becomes its own overworld sheet.</summary>
+        void EditAsOverworld(OverworldResult r)
+        {
+            if (E.Doc == null || r == null || !ConfirmDiscard()) return;
+            var src = E.Doc;
+            var d = new SpriteDocument(src.Style, SpriteKind.Overworld, "Walk", r.Layout) { Name = src.Name, LimitPalette = src.LimitPalette };
+            d.Layers.Add(d.LayerFromFrames("Walking sprite", r.Frames));
+            d.Dirty = true;
+            SetDoc(d);
+            E.Say("This is the walking sprite as its own overworld sheet: touch it up, then save it or export it (Ctrl+E).");
         }
 
         void Open()
@@ -445,7 +510,7 @@ FILE
         {
             try
             {
-                var d = SpriteDocument.Load(path, E.Lib);
+                var d = SpriteDocument.Load(path);
                 SetDoc(d);
                 E.Settings.AddRecent(path);
                 E.Say(d.Warnings.Count > 0 ? string.Join("  ", d.Warnings) : "Opened " + path);
@@ -471,6 +536,7 @@ FILE
                 E.Settings.AddRecent(path);
                 UpdateTitle();
                 E.Say("Saved " + path);
+                E.NotifySaved();
                 return true;
             }
             catch (Exception ex) { MessageBox.Show(this, "Couldn't save:\r\n" + ex.Message, AppName, MessageBoxButtons.OK, MessageBoxIcon.Error); return false; }
@@ -493,18 +559,6 @@ FILE
             UpdateTitle();
         }
 
-        void ChangePartsFolder()
-        {
-            using (var fbd = new FolderBrowserDialog { Description = "Choose the parts folder", SelectedPath = E.Lib.Root })
-            {
-                if (fbd.ShowDialog(this) != DialogResult.OK) return;
-                E.Settings.PartsFolder = fbd.SelectedPath;
-                E.Lib.Root = fbd.SelectedPath;
-                E.Lib.EnsureFolders();
-                _parts.Reload();
-            }
-        }
-
         void ShowText(string title, string text)
         {
             using (var f = new Form { Text = title, Size = new Size(720, 560), StartPosition = FormStartPosition.CenterParent, ShowInTaskbar = false, MinimizeBox = false, Font = Theme.UiFont })
@@ -521,6 +575,7 @@ FILE
         {
             if (!ConfirmDiscard()) { e.Cancel = true; return; }
             _frames.Stop();
+            _dirs.Stop();
             E.Settings.Save();
             base.OnFormClosing(e);
         }

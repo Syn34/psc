@@ -7,5 +7,3 @@ obj/
 *.suo
 .vs/
 *.tmp
-# Part art is supplied by each user (no Nintendo graphics in the repo)
-/Parts/

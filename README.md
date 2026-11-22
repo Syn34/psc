@@ -1,96 +1,83 @@
 # Poke Sprite Creator (PSC)
 
-A sprite maker for Pokémon fan games, and a companion app for [PokeCreator](https://github.com/Syn34/pokeCreator).
+A sprite editor for Pokémon fan games, and a companion app for [PokeCreator](https://github.com/Syn34/pokeCreator).
 
-Make **trainer front sprites**, **trainer back sprites** (animated throw strips) and **overworld sheets**
-(walk, run, bike, surf, fish…) in the style of **Gen 1 to Gen 5**. Build a character piece by piece from
-your parts folder (poses, hair, tops, bottoms, shoes, hats, visors, sunglasses, backpacks, bikes…),
-recolour every piece, and draw anything else free-hand.
+Draw a sprite or bring one in (PNG, GIF or BMP), edit it, and when you save a trainer front sprite the side panel
+makes its **overworld walking sprite**: facing down, left, right and up, with walking steps, in the right size for
+the style you picked (Gen 1 to Gen 5).
 
-## Features
+## Making a sprite
 
-- **Styles Gen 1–5**: each with the games' own sprite sizes and colour limits (Gen 1: 4 greys, Gen 2: 4 colours,
-  Gen 3–5: 15 colours + transparency). Tick "Limit to … colours" to see and export the sprite the way the games would.
-- **Start from a pose** (a blank outline to fill in) or from a blank canvas. A pose also sets the canvas size.
-- **Parts browser**: click a part to wear it; each thumbnail shows *your* sprite wearing that part.
-  Ctrl+click adds a second layer of the same category (two accessories, say). "(None)" takes it off.
-- **Recolouring**: per part, click any of its colours to change it, or slide Hue / Saturation / Brightness
-  (dark outlines are kept). The Recolour tool changes a colour by clicking it on the sprite (Shift+click: on every layer).
-  Right-click a colour under "In this sprite" to replace it everywhere (e.g. skin tone).
-- **Free-hand tools**: pencil, eraser, fill, colour picker, line, rectangle, ellipse, move, mirror drawing.
-  Fill can follow the outlines of every visible layer, so colouring in a pose outline is one click per area.
-- **Layers**: show/hide, reorder, rename, duplicate, merge down, convert a part to an editable paint layer.
-- **Frames**: frame strip with an animated preview; onion skin; copy a frame to all; mirror Left ↔ Right
-  for overworld sheets; add/remove frames on back sprites.
-- **Undo / Redo** for everything.
-- **Export PNG** at 1×–4×, to any file or straight into a PokeCreator / Essentials game folder with the right name:
-  `Graphics/Trainers/NAME.png`, `Graphics/Trainers/NAME_back.png`, `Graphics/Characters/trainer_NAME.png`,
-  `Graphics/Characters/NAME_bike.png`, …
-- Sprites save as `.psc` files, which keep a copy of the parts they use, so they open on another PC too.
-- Light and dark mode.
+*File > New sprite* (Ctrl+N): pick the style and the kind of sprite, then start from a blank canvas or a picture.
 
-## Built-in parts
+| Kind | What it is |
+|------|------------|
+| Trainer front sprite | the battle picture; the walking sprite is made from it |
+| Trainer back sprite | a strip of frames (the throw animation) |
+| Overworld sheet | 4 × 4 frames: rows Down, Left, Right, Up; columns are the walking steps (Walk, Run, Bike, Surf, Fish…) |
 
-The app comes with a `Built-in parts` folder next to the exe (from `builtin-parts/` in this repo, copied by the build).
-It has the same layout as your own parts folder and is always listed alongside it.
+- *File > Import picture as a new sprite* (Ctrl+I) opens the same dialog with a picture chosen.
+- *File > Import picture as a layer* (Ctrl+Shift+I) adds a picture to the sprite you're editing.
+- Pictures are fitted to the canvas: same size → unchanged; bigger with empty space (e.g. an 80×89 download for an 80×80
+  Gen 5 sprite) → trimmed with the feet kept on the bottom row; pixel-doubled art → shrunk back; animated GIFs and strips →
+  frames of a back sprite; a 4 × 4 sheet → an overworld sheet. A picture bigger than the style's size makes a bigger canvas.
 
-- **Gen 5 trainer front (80×80)**: Nate, cut into Poses (`Nate`, `Nate line art`), Hair, Visors, Tops, Backpacks (`Nate bag`),
-  Accessories (`Nate wristband`), Bottoms and Shoes.
-- **Gen 5 trainer front (80×80)**: Ace Trainer M, cut into Poses (`Ace Trainer M`, `Ace Trainer M line art`), Hair, Tops
-  (jacket and orange shirt), Bottoms (trousers and belt), Shoes (boots) and Accessories (`Ace Trainer M Poke Balls`:
-  the ball in his hand and the one on his belt).
+## Editing
 
-Wearing every piece of one trainer rebuilds the original sprite exactly. Pieces fit the trainer they were cut from:
-the two trainers stand differently, so a piece moved onto the other trainer needs nudging into place (Move tool or the
-X / Y boxes), and clothes may leave gaps.
+Pencil, eraser, fill (it can follow the outlines of every visible layer), colour picker, line, rectangle, ellipse, move,
+recolour (click a colour to change it; Shift+click: on every layer) and mirror drawing. Layers (show/hide, order, rename,
+duplicate, merge), undo/redo, frame strip with animated preview, onion skin, copy a frame to all, overworld Left ↔ Right
+mirror, add/remove back-sprite frames. "Limit to 15 colours like Gen 5" (4 greys for Gen 1, 4 colours for Gen 2) shows and
+exports the sprite the way the games would. Light and dark mode.
 
-A part of your own with the same category and name replaces the built-in one.
+## The walking sprite (In-game directions panel)
 
-## Parts folder
+Made from a trainer front sprite every time you save it, or when you click **Update now**.
 
-Add your own parts here. On first run it creates `Parts\` next to the exe
-with an empty folder for every style, sprite kind and category, plus a `README.txt` guide
-(also under *Help > Parts folder guide*). You can point the app at another folder in *File > Change parts folder*.
+- **Size**: the style's overworld frame size: Gen 1–2 16×16, Gen 3 16×32, Gen 4–5 32×32.
+- **How**: the head keeps the trainer's hair shape (shrunk from the sprite); the body is a clean overworld-style body coloured
+  with the trainer's own colours, picked out of the sprite: hair (light and dark), skin, jacket/shirt (with the inner shirt
+  down the middle), trousers, shoes, and a headband or visor if there is one. So it works whatever pose the battle sprite has.
+  Left and right are mirrors; walking frames lift one foot (down/up) or spread the legs (sideways).
+- **Symmetric front and back**: makes both sides of the down and up views match (battle sprites are often drawn at an angle).
+- **Up view hair from a back sprite**: uses a back sprite's hair shape (PNG, GIF or `.psc`) for the view from behind.
+- **Export sheet…**: saves the 4 × 4 sheet at 1×–4× (`trainer_NAME.png`, for `Graphics/Characters`).
+- **Edit as overworld sprite**: opens the sheet as its own overworld sprite to touch up.
+- For an overworld sheet the panel plays the sheet itself; back sprites don't make a walking sprite.
 
-```
-Parts\
-  Gen 3\
-    Front\     Poses\ Hair\ Hats\ Visors\ Sunglasses\ Tops\ Jackets\ Bottoms\ Shoes\ Gloves\ Backpacks\ Accessories\
-    Back\      (same categories; pictures are strips of frames)
-    Overworld\
-      Walk\ Run\ Bike\ Surf\ Fish\   (same categories, plus Bikes\ in Bike; pictures are 4×4 sheets)
-```
+It's a starting point: small details (logos, bags, things held in the hand) aren't carried over.
 
-- The folder a picture is in decides where it appears; the file name is the part's name. Any new folder is a new category.
-- Draw parts at the game's size (or exactly 2×/3×/4× pixel-doubled — they're shrunk automatically),
-  on a transparent background, lined up with the poses.
-- A picture the size of the whole sprite/sheet gives each frame its own picture; one frame's size is used on every frame;
-  anything else is a "loose" piece you drag into place.
-- `NAME_behind.png` next to `NAME.png` is drawn underneath the body (long hair behind the back, a backpack, a bike's back wheel).
-- Layer order (bottom → top) when parts are added: Poses, Shoes, Bottoms, Tops, Jackets, Gloves, Backpacks, Hair, Hats,
-  Visors, Sunglasses, Accessories, Bikes. Put an `order.txt` in a kind folder to change it.
+## Exporting
 
-| Style | Front | Back | Overworld frame |
-|-------|-------|------|-----------------|
-| Gen 1 | 56×56 | 32×32 | 16×16 |
-| Gen 2 | 56×56 | 48×48 | 16×16 |
-| Gen 3 | 64×64 | 64×64 × 4 frames | 16×32 |
-| Gen 4 | 80×80 | 80×80 × 5 frames | 32×32 |
-| Gen 5 | 80×80 | 80×80 × 5 frames | 32×32 |
+*File > Export PNG* (Ctrl+E) saves at 1×–4× to any file or straight into a PokeCreator / Essentials game folder with the
+right name: `Graphics/Trainers/NAME.png`, `Graphics/Trainers/NAME_back.png`, `Graphics/Characters/trainer_NAME.png`,
+`Graphics/Characters/NAME_bike.png`, …
+
+Sprites save as `.psc` files (layers, frames and walking-sprite settings). Files from 0.1.x open too; their part layers
+become paint layers.
+
+| Style | Front | Back | Overworld frame | Colours |
+|-------|-------|------|-----------------|---------|
+| Gen 1 | 56×56 | 32×32 | 16×16 | 4 greys |
+| Gen 2 | 56×56 | 48×48 | 16×16 | 4 |
+| Gen 3 | 64×64 | 64×64 × 4 frames | 16×32 | 15 + transparent |
+| Gen 4 | 80×80 | 80×80 × 5 frames | 32×32 | 15 + transparent |
+| Gen 5 | 80×80 | 80×80 × 5 frames | 32×32 | 15 + transparent |
 
 ## Building
 
-- **Windows**: run `build.cmd` (uses the C# compiler that comes with .NET Framework 4 — nothing to install),
+- **Windows**: run `build.cmd` (uses the C# compiler that comes with .NET Framework 4, nothing to install),
   or open `PokeSpriteCreator.sln` in Visual Studio 2022. Output: `bin\PokeSpriteCreator.exe`.
 - **Linux / macOS**: `./build.sh` with Mono (`mono-devel`).
 
 The source is C# 5 for .NET Framework 4.8 with WinForms, no NuGet packages.
 
-`PokeSpriteCreator.exe --selftest [folder]` makes a few plain test shapes as parts and checks building, recolouring,
-colour limits, saving and exporting.
+`PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and checks picture import, editing, colour limits,
+saving, exporting and the walking sprite for every style.
 
 ## Keyboard shortcuts
 
 B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour ·
 X swap colours · S mirror · Alt+click pick colour · Shift = filled shape / straight line ·
-arrows nudge the layer · Ctrl+wheel zoom · middle-drag pan · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo
+arrows nudge the layer · Ctrl+wheel zoom · middle-drag pan · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
+Ctrl+I import picture · Ctrl+S save (makes the walking sprite) · Ctrl+E export

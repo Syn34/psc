@@ -10,7 +10,6 @@ namespace PokeSpriteCreator.Model
     /// <summary>App settings, kept in %AppData%\PokeSpriteCreator\settings.json.</summary>
     public class Settings
     {
-        public string PartsFolder;
         public List<string> Recent = new List<string>();
         public int LastGen = 3;
         public string LastKind = "Front";
@@ -32,10 +31,6 @@ namespace PokeSpriteCreator.Model
         }
         static string FilePath { get { return Path.Combine(Dir, "settings.json"); } }
 
-        public static string DefaultPartsFolder { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Parts"); } }
-
-        /// <summary>Parts that ship with the app (copied next to the exe by the build).</summary>
-        public static string BuiltInPartsFolder { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Built-in parts"); } }
 
         public static Settings Load()
         {
@@ -47,7 +42,6 @@ namespace PokeSpriteCreator.Model
                     var o = Json.Json.Parse(File.ReadAllText(FilePath, Encoding.UTF8)) as JsonObject;
                     if (o != null)
                     {
-                        s.PartsFolder = o.GetString("partsFolder");
                         s.LastGen = o.GetInt("lastGen", 3);
                         s.LastKind = o.GetString("lastKind", "Front");
                         s.ExportScale = o.GetInt("exportScale", 2);
@@ -61,7 +55,6 @@ namespace PokeSpriteCreator.Model
                 }
             }
             catch { }
-            if (string.IsNullOrEmpty(s.PartsFolder)) s.PartsFolder = DefaultPartsFolder;
             return s;
         }
 
@@ -71,7 +64,6 @@ namespace PokeSpriteCreator.Model
             {
                 Directory.CreateDirectory(Dir);
                 var o = new JsonObject();
-                o["partsFolder"] = PartsFolder;
                 o["lastGen"] = LastGen;
                 o["lastKind"] = LastKind;
                 o["exportScale"] = ExportScale;

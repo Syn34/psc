@@ -3,14 +3,17 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text;
+using PokeSpriteCreator.Json;
 using PokeSpriteCreator.Model;
 using PokeSpriteCreator.UI;
 
 namespace PokeSpriteCreator
 {
     /// <summary>
-    /// "PokeSpriteCreator.exe --selftest [folder]": makes a small set of simple test parts (plain shapes,
-    /// not game art) in folder\Parts, then checks building, recolouring, colour limits, saving and exporting.
+    /// "PokeSpriteCreator.exe --selftest [folder]": draws a simple test trainer (plain shapes, not game art)
+    /// and checks picture import, editing, colour limits, saving, exporting and the walking-sprite generator.
+    /// The test pictures are left in the folder.
     /// </summary>
     public static class SelfTest
     {
@@ -20,173 +23,152 @@ namespace PokeSpriteCreator
         {
             dir = dir ?? Path.Combine(Path.GetTempPath(), "psc-selftest");
             Directory.CreateDirectory(dir);
-            var root = Path.Combine(dir, "Parts");
-            MakeSampleParts(root);
-            var lib = new PartLibrary(root);
+            var trainer = TestTrainer(80, 80, 0, 3);
+            var trainerPng = Path.Combine(dir, "trainer.png");
+            trainer.Save(trainerPng);
 
-            // ---- library
-            Check(lib.Categories(3, SpriteKind.Front, null).First() == "Poses", "Poses is the bottom category");
-            var cats = lib.Categories(3, SpriteKind.Front, null);
-            Check(cats.IndexOf("Hair") < cats.IndexOf("Hats") && cats.IndexOf("Tops") < cats.IndexOf("Hair"), "category order");
-            var pose = lib.Find(3, SpriteKind.Front, null, "Poses", "Standing");
-            Check(pose != null && pose.Sheet != null && pose.Sheet.W == 64, "pose loads");
-            var pack = lib.Find(3, SpriteKind.Front, null, "Backpacks", "Pack");
-            Check(pack != null && pack.BehindPath != null, "_behind companion found");
-            Check(!lib.Parts(3, SpriteKind.Front, null, "Backpacks").Any(p => p.Name.EndsWith("_behind")), "_behind not listed as its own part");
+            // ---- picture import
+            var g5 = GenStyle.Get(5);
+            var pics = ImageImport.LoadFrames(trainerPng);
+            Check(pics.Count == 1 && pics[0].W == 80, "loads a PNG");
+            string note;
+            var lay = ImageImport.Suggest(pics, SpriteKind.Front, g5, out note);
+            Check(lay.FrameW == 80 && lay.FrameH == 80, "80x80 picture fits Gen 5 as it is");
+            Check(ImageImport.FramesFor(pics, lay)[0].SameAs(trainer), "same-size picture unchanged");
 
-            // ---- building a front sprite
-            var st = GenStyle.Get(3);
-            var d = new SpriteDocument(st, SpriteKind.Front, null, st.DefaultLayout(SpriteKind.Front));
-            d.Layers.Add(d.MakePartLayer(pose));
-            d.Layers.Add(d.NewPaintLayer("Paint"));
-            var ed = new Editor(new Settings { PartsFolder = root }) { Lib = lib };
+            var tall = TestTrainer(80, 89, 0, 9);                       // like an 80x89 download with empty rows on top
+            lay = ImageImport.Suggest(new List<PixelImage> { tall }, SpriteKind.Front, g5, out note);
+            var fitted = ImageImport.FramesFor(new List<PixelImage> { tall }, lay)[0];
+            Check(lay.FrameH == 80 && fitted.Bounds().Bottom == 80 && fitted.Bounds().Height == tall.Bounds().Height, "taller picture trimmed with the feet on the bottom row");
+            Check(fitted.Bounds().X == tall.Bounds().X, "left/right position kept when the widths match");
+
+            var doubled = trainer.Scale(2);
+            lay = ImageImport.Suggest(new List<PixelImage> { doubled }, SpriteKind.Front, g5, out note);
+            Check(lay.FrameW == 80 && ImageImport.FramesFor(new List<PixelImage> { doubled }, lay)[0].SameAs(trainer), "pixel-doubled picture shrunk back");
+
+            var strip = new PixelImage(320, 80);
+            for (int i = 0; i < 4; i++) strip.Blit(TestTrainer(80, 80, i, 3), i * 80, 0);
+            lay = ImageImport.Suggest(new List<PixelImage> { strip }, SpriteKind.Back, g5, out note);
+            Check(lay.Cols == 4 && lay.FrameW == 80, "back strip becomes 4 frames");
+            var stripFrames = ImageImport.FramesFor(new List<PixelImage> { strip }, lay);
+            Check(!stripFrames[0].SameAs(stripFrames[3]), "strip frames differ");
+
+            var sheet = new PixelImage(128, 128);
+            lay = ImageImport.Suggest(new List<PixelImage> { sheet }, SpriteKind.Overworld, g5, out note);
+            Check(lay.Cols == 4 && lay.Rows == 4 && lay.FrameW == 32, "4x4 sheet becomes an overworld sheet");
+
+            // ---- a document made from the picture
+            var d = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+            d.Layers.Add(d.LayerFromFrames("Picture", new List<PixelImage> { trainer }));
+            var ed = new Editor(new Settings());
             ed.SetDocument(d);
-            foreach (var n in new[] { "Tops/Shirt", "Bottoms/Pants", "Hair/Short", "Hats/Cap", "Backpacks/Pack", "Sunglasses/Shades" })
-            {
-                var parts = n.Split('/');
-                ed.SetPart(lib.Find(3, SpriteKind.Front, null, parts[0], parts[1]), false);
-            }
-            Check(d.Layers.Count == 8, "8 layers (pose, paint, 6 parts), got " + d.Layers.Count);
-            var order = d.Layers.OfType<PartLayer>().Select(l => l.Category).ToList();
-            Check(order.IndexOf("Hats") > order.IndexOf("Hair") && order.IndexOf("Tops") > order.IndexOf("Poses"), "parts inserted in layer order: " + string.Join(",", order));
-            var shades = d.Layers.OfType<PartLayer>().First(l => l.Category == "Sunglasses");
-            Check(shades.IsLoose(d.Layout) && shades.OffsetX > 0, "small piece is loose and centred");
-            var img = d.Composite(0);
-            Check(img.Get(32, 40) != 0, "body is drawn");
-            // backpack's behind picture sits under the body: the strap area right of the body shows the pack colour
-            Check(img.Colors().Contains(PixelImage.Rgb(120, 80, 40)), "behind picture drawn");
-
-            // replacing within a category keeps one layer
-            ed.SetPart(lib.Find(3, SpriteKind.Front, null, "Hair", "Long"), false);
-            Check(d.Layers.Count(l => l is PartLayer && ((PartLayer)l).Category == "Hair") == 1, "hair replaced, not added");
-            ed.SetPart(lib.Find(3, SpriteKind.Front, null, "Hats", "Cap"), true);
-            Check(d.Layers.Count(l => l is PartLayer && ((PartLayer)l).Category == "Hats") == 2, "Ctrl adds an extra layer");
+            Check(d.Composite(0).SameAs(trainer), "picture layer draws");
+            ed.AddLayer();
+            Check(d.Layers.Count == 2 && ed.LayerIndex == 1, "new layer on top");
+            d.Layers[1].Frames[0].Set(0, 0, PixelImage.Rgb(1, 2, 3));
             ed.Undo();
-            Check(d.Layers.Count(l => l is PartLayer && ((PartLayer)l).Category == "Hats") == 1, "undo removes it");
+            Check(d.Layers.Count == 1, "undo removes the layer");
             ed.Redo(); ed.Undo();
 
-            // ---- recolouring
-            var shirt = ed.Doc.Layers.OfType<PartLayer>().First(l => l.Category == "Tops");
-            var blue = PixelImage.Rgb(60, 100, 220);
-            Check(shirt.SourcePalette().Contains(blue), "shirt palette has its blue");
-            shirt.ColorMap[blue] = PixelImage.Rgb(40, 180, 60);
-            Check(ed.Doc.Composite(0).Colors().Contains(PixelImage.Rgb(40, 180, 60)), "colour swap shows");
-            shirt.ResetColors();
-            shirt.Hue = 120;
-            var c = ed.Doc.Composite(0);
-            Check(!c.Colors().Contains(blue), "hue shift changes the blue");
-            Check(c.Colors().Contains(PixelImage.Rgb(0, 0, 0)), "outline kept black");
-            shirt.ResetColors();
-            ed.Doc.ReplaceColorEverywhere(blue, PixelImage.Rgb(250, 0, 250));
-            Check(ed.Doc.Composite(0).Colors().Contains(PixelImage.Rgb(250, 0, 250)), "replace everywhere reaches part layers");
-            shirt.ResetColors();
-
-            // ---- colour limits
-            var paint = ed.Doc.Layers.OfType<PaintLayer>().First();
-            for (int i = 0; i < 30; i++) paint.Frames[0].Set(i, 63, PixelImage.Rgb(i * 8, 255 - i * 8, 128));
-            Check(ed.Doc.ColorCount() > 15, "test has too many colours");
-            var lim = ed.Doc.FinalFrames(true)[0].Colors().Count;
-            Check(lim <= 15, "Gen 3 limit gives <= 15 colours, got " + lim);
+            // colour limits
+            var paint = d.Layers[0];
+            for (int i = 0; i < 30; i++) paint.Frames[0].Set(i, 0, PixelImage.Rgb(i * 8, 255 - i * 8, 128));
+            Check(d.ColorCount() > 15, "test has too many colours");
+            Check(d.FinalFrames(true)[0].Colors().Count <= 15, "Gen 5 limit gives 15 colours or fewer");
             var g1 = new SpriteDocument(GenStyle.Get(1), SpriteKind.Front, null, GenStyle.Get(1).DefaultLayout(SpriteKind.Front));
-            var gp = g1.NewPaintLayer("p"); g1.Layers.Add(gp);
-            for (int i = 0; i < 56; i++) gp.Frames[0].Set(i, 10, PixelImage.Rgb(i * 4, i * 2, 200));
+            g1.Layers.Add(g1.LayerFromFrames("p", new List<PixelImage> { trainer.Crop(12, 24, 56, 56) }));
             Check(g1.FinalFrames(true)[0].Colors().IsSubsetOf(GenStyle.Get(1).Palette), "Gen 1 becomes 4 greys");
+            for (int i = 0; i < 30; i++) paint.Frames[0].Set(i, 0, 0);
 
-            // ---- save / load round trip
+            // save / load
             var file = Path.Combine(dir, "test.psc");
-            ed.Doc.Name = "TESTER";
-            shirt.ColorMap[blue] = PixelImage.Rgb(40, 180, 60);
-            var before = ed.Doc.Composite(0);
-            ed.Doc.Save(file);
-            var back = SpriteDocument.Load(file, lib);
-            Check(back.Layers.Count == ed.Doc.Layers.Count && back.Name == "TESTER", "load keeps layers and name");
-            Check(back.Composite(0).SameAs(before), "load draws the same picture");
-            var noLib = SpriteDocument.Load(file, new PartLibrary(Path.Combine(dir, "nowhere")));
-            Check(noLib.Composite(0).SameAs(before) && noLib.Warnings.Count > 0, "opens without the parts (embedded copies)");
+            d.Name = "TESTER";
+            d.OwSymmetric = false;
+            d.UpSource = Path.Combine(dir, "back.png");
+            var before = d.Composite(0);
+            d.Save(file);
+            var back = SpriteDocument.Load(file);
+            Check(back.Layers.Count == d.Layers.Count && back.Name == "TESTER" && back.Composite(0).SameAs(before), "save and open keep the sprite");
+            Check(!back.OwSymmetric && back.UpSource == d.UpSource, "save keeps the walking-sprite settings");
 
-            // ---- export
+            // files from 0.1.x with part layers open as paint layers
+            var legacy = new JsonObject();
+            legacy["app"] = "PokeSpriteCreator"; legacy["version"] = 1; legacy["gen"] = 5; legacy["kind"] = "Front";
+            legacy["frameWidth"] = 80; legacy["frameHeight"] = 80; legacy["columns"] = 1; legacy["rows"] = 1;
+            var part = new JsonObject();
+            part["type"] = "part"; part["name"] = "Hair"; part["category"] = "Hair"; part["part"] = "X"; part["x"] = 0; part["y"] = 0;
+            part["embedded"] = Convert.ToBase64String(trainer.ToPngBytes());
+            var colors = new JsonObject(); colors[PixelImage.Hex(Shirt)] = "#00FF00"; part["colors"] = colors;
+            legacy["layers"] = new List<object> { part };
+            var legacyFile = Path.Combine(dir, "legacy.psc");
+            File.WriteAllText(legacyFile, Json.Json.Write(legacy), new UTF8Encoding(false));
+            var ld = SpriteDocument.Load(legacyFile);
+            Check(ld.Layers.Count == 1 && ld.Warnings.Count == 1 && ld.Composite(0).Colors().Contains(PixelImage.Rgb(0, 255, 0)), "old part layer opens as a paint layer with its colours");
+
+            // export
             var outPng = Path.Combine(dir, "TESTER.png");
-            ed.Doc.BuildSheet(true, 2).Save(outPng);
+            d.BuildSheet(true, 2).Save(outPng);
             var exp = PixelImage.Load(outPng);
-            Check(exp != null && exp.W == 128 && exp.H == 128, "export at 2x is 128x128");
-            Check(ExportDialog.DefaultFileName(ed.Doc, "TESTER") == "TESTER.png", "front file name");
-
-            // ---- back sprite (strip of frames)
-            var bpose = lib.Find(3, SpriteKind.Back, null, "Poses", "Throw");
-            var bd = new SpriteDocument(st, SpriteKind.Back, null, new FrameLayout(64, 64, 4, 1));
-            bd.Layers.Add(bd.MakePartLayer(bpose));
-            Check(!bd.Composite(0).SameAs(bd.Composite(3)), "back frames differ");
-            Check(bd.BuildSheet(false, 1).W == 256, "back sheet is a strip");
+            Check(exp != null && exp.W == 160 && exp.H == 160, "export at 2x is 160x160");
+            Check(ExportDialog.DefaultFileName(d, "TESTER") == "TESTER.png", "front file name");
+            var bd = new SpriteDocument(g5, SpriteKind.Back, null, new FrameLayout(80, 80, 4, 1));
             Check(ExportDialog.DefaultFileName(bd, "TESTER") == "TESTER_back.png", "back file name");
-            var ebd = new Editor(new Settings()) { Lib = lib }; ebd.SetDocument(bd);
-            ebd.SetFrameCount(5);
-            Check(bd.FrameCount == 5 && bd.Composite(4) != null, "frames can be added");
+            var owd = new SpriteDocument(g5, SpriteKind.Overworld, "Walk", g5.DefaultLayout(SpriteKind.Overworld));
+            Check(ExportDialog.DefaultFileName(owd, "TESTER") == "trainer_TESTER.png", "walk file name");
+            owd.Sheet = "Bike";
+            Check(ExportDialog.DefaultFileName(owd, "TESTER") == "TESTER_bike.png", "bike file name");
 
-            // ---- overworld sheet
-            var owPose = lib.Find(3, SpriteKind.Overworld, "Walk", "Poses", "Body");
-            var ow = new SpriteDocument(st, SpriteKind.Overworld, "Walk", st.DefaultLayout(SpriteKind.Overworld));
-            ow.Layers.Add(ow.MakePartLayer(owPose));
-            var owp = ow.NewPaintLayer("Paint"); ow.Layers.Add(owp);
-            var hair = lib.Find(3, SpriteKind.Overworld, "Walk", "Hair", "Spiky");
-            Check(hair.FramesFor(ow.Layout).Scale == 2, "pixel-doubled part is shrunk (scale " + hair.FramesFor(ow.Layout).Scale + ")");
-            ow.Layers.Add(ow.MakePartLayer(hair));
-            Check(ow.Composite(0).Get(8, 6) != 0, "overworld hair drawn");
-            Check(ow.BuildSheet(false, 1).W == 64 && ow.BuildSheet(false, 1).H == 128, "overworld sheet 64x128");
-            owp.Frames[4].Set(2, 10, PixelImage.Rgb(255, 0, 0));
-            var eow = new Editor(new Settings()) { Lib = lib }; eow.SetDocument(ow);
+            // overworld mirror + back frame count
+            owd.Layers.Add(owd.NewLayer("Paint"));
+            owd.Layers[0].Frames[4].Set(2, 10, PixelImage.Rgb(255, 0, 0));
+            var eow = new Editor(new Settings()); eow.SetDocument(owd);
             eow.MirrorRows(true);
-            Check(owp.Frames[8].Get(13, 10) == PixelImage.Rgb(255, 0, 0), "Left → Right mirror");
-            Check(ExportDialog.DefaultFileName(ow, "TESTER") == "trainer_TESTER.png", "walk file name");
-            ow.Sheet = "Bike";
-            Check(ExportDialog.DefaultFileName(ow, "TESTER") == "TESTER_bike.png", "bike file name");
+            Check(owd.Layers[0].Frames[8].Get(29, 10) == PixelImage.Rgb(255, 0, 0), "Left to Right mirror");
+            bd.Layers.Add(bd.LayerFromFrames("p", stripFrames));
+            var ebd = new Editor(new Settings()); ebd.SetDocument(bd);
+            ebd.SetFrameCount(5);
+            Check(bd.FrameCount == 5 && bd.Layers[0].Frames.Count == 5, "frames can be added");
 
-            // ---- built-in parts (the "Built-in parts" folder next to the exe)
-            var bi = Settings.BuiltInPartsFolder;
-            if (!Directory.Exists(bi)) Check(false, "built-in parts folder is missing: " + bi);
-            else
+            // ---- walking sprite made from the front sprite
+            foreach (var st in GenStyle.All)
             {
-                var both = new PartLibrary(root, bi);
-                var g5 = GenStyle.Get(5);
-                var nateCats = new[] { "Poses", "Shoes", "Bottoms", "Tops", "Backpacks", "Hair", "Visors", "Accessories" };
-                foreach (var cat in nateCats) Check(both.Categories(5, SpriteKind.Front, null).Contains(cat), "built-in category " + cat);
-                var nd = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
-                Check(nd.Layout.FrameW == 80, "Gen 5 front is 80x80");
-                var ne = new Editor(new Settings()) { Lib = both };
-                ne.SetDocument(nd);
-                foreach (var cat in nateCats)
+                var r = OverworldGenerator.Make(trainer, st, true, null);
+                string g = st.Name + ": ";
+                Check(r.Frames.Count == 16 && r.Frames.All(f => f.W == st.OwW && f.H == st.OwH), g + "16 frames of " + st.OwW + "x" + st.OwH);
+                Check(r.Frames.All(f => !f.Bounds().IsEmpty && f.Bounds().Bottom == st.OwH), g + "every frame stands on the bottom row");
+                var colorsUsed = new HashSet<int>(); foreach (var f in r.Frames) colorsUsed.UnionWith(f.Colors());
+                Check(st.Greyscale ? colorsUsed.IsSubsetOf(st.Palette) : colorsUsed.Count <= st.MaxColors, g + "within the colour limit (" + colorsUsed.Count + ")");
+                for (int s = 0; s < 4; s++) Check(r.Frame(OverworldGenerator.Right, s).SameAs(r.Frame(OverworldGenerator.Left, s).FlipH()), g + "right is the mirror of left, step " + s);
+                Check(!r.Frame(OverworldGenerator.Down, 1).SameAs(r.Frame(OverworldGenerator.Down, 0)) && !r.Frame(OverworldGenerator.Down, 3).SameAs(r.Frame(OverworldGenerator.Down, 1)), g + "walking steps differ");
+                Check(r.Frame(OverworldGenerator.Down, 0).SameAs(r.Frame(OverworldGenerator.Down, 2)), g + "columns 1 and 3 are the standing frame");
+                if (!st.Greyscale)
                 {
-                    var p = both.Parts(5, SpriteKind.Front, null, cat).FirstOrDefault(x => x.Name.StartsWith("Nate") && x.Name != "Nate line art");
-                    Check(p != null && p.BuiltIn && p.Sheet != null && p.Sheet.W == 80 && !p.FramesFor(nd.Layout).Loose, "built-in Nate part in " + cat);
-                    if (p != null) ne.SetPart(p, false);
+                    Check(r.Colors.Skin == Skin && r.Colors.Torso == Shirt && r.Colors.Legs == Pants && r.Colors.Shoes == ShoeC && r.Colors.Band == Band, g + "picks the trainer's colours");
+                    // with few colours the skin may be merged into a near colour: count the frame's colour nearest to skin
+                    var downF = r.Frame(OverworldGenerator.Down, 0);
+                    int skinNow = ColorTools.Nearest(Skin, downF.Colors().ToList());
+                    int downSkin = downF.Px.Count(c => c == skinNow), upSkin = r.Frame(OverworldGenerator.Up, 0).Px.Count(c => c == skinNow);
+                    Check(downSkin > upSkin + 6, g + "face shows facing down but not facing up");
                 }
-                var nate = nd.Composite(0);
-                Check(nate.Colors().Count == 15, "Nate rebuilt with 15 colours, got " + nate.Colors().Count);
-                Check(nd.Layers.OfType<PartLayer>().Select(l => l.Category).SequenceEqual(nateCats), "Nate layers in stack order");
-                // the user's own part with the same name wins
-                Save(new PixelImage(80, 80), root, "Gen 5/Front/Hair/Nate.png");
-                both.Refresh();
-                var hairPart = both.Find(5, SpriteKind.Front, null, "Hair", "Nate");
-                Check(hairPart != null && !hairPart.BuiltIn && both.Parts(5, SpriteKind.Front, null, "Hair").Count(x => x.Name == "Nate") == 1, "user part replaces built-in");
-                Check(both.CountBuiltIn() == 16, "16 built-in parts, got " + both.CountBuiltIn());
-                // Ace Trainer M: every piece is a full 80x80 frame and together they make the 15-colour sprite
-                var ad = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
-                var ae = new Editor(new Settings()) { Lib = both };
-                ae.SetDocument(ad);
-                foreach (var cat in new[] { "Poses", "Shoes", "Bottoms", "Tops", "Hair", "Accessories" })
-                {
-                    var p = both.Parts(5, SpriteKind.Front, null, cat).FirstOrDefault(x => x.Name.StartsWith("Ace Trainer M") && !x.Name.EndsWith("line art"));
-                    Check(p != null && p.BuiltIn && !p.FramesFor(ad.Layout).Loose, "built-in Ace Trainer M part in " + cat);
-                    if (p != null) ae.SetPart(p, false);
-                }
-                Check(ad.Composite(0).Colors().Count == 15, "Ace Trainer M rebuilt with 15 colours, got " + ad.Composite(0).Colors().Count);
+                var sym = r.Frame(OverworldGenerator.Down, 0);
+                Check(sym.SameAs(sym.FlipH()), g + "symmetric down view is exactly symmetric");
             }
+            var blank = OverworldGenerator.Make(new PixelImage(80, 80), g5, true, null);
+            Check(blank.Frames.Count == 16 && blank.Frames.All(f => f.IsEmpty), "empty sprite gives an empty sheet");
+            // a back sprite's hair is used for the up view
+            var backPic = TestTrainer(80, 80, 0, 3);
+            for (int y = 0; y < 30; y++) for (int x = 0; x < 80; x++) if (backPic.Get(x, y) != 0) backPic.Set(x, y, Hair);
+            var withBack = OverworldGenerator.Make(trainer, g5, true, backPic);
+            Check(withBack.Note.Contains("back sprite"), "up view from a back sprite");
+            OverworldGenerator.Make(trainer, g5, true, null);
+            SpriteDocument.MakeSheet(OverworldGenerator.Make(trainer, g5, true, null).Frames, new FrameLayout(32, 32, 4, 4), 1).Save(Path.Combine(dir, "trainer_walk.png"));
 
             // ---- shapes
             Check(SpriteCanvas.LinePoints(new Point(0, 0), new Point(5, 2)).Count() == 6, "line");
             Check(SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), true).Count() > SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), false).Count(), "ellipse filled > outline");
 
             Console.WriteLine(_fail == 0 ? "SELFTEST OK" : "SELFTEST FAILED: " + _fail);
-            Console.WriteLine("Sample parts: " + root);
+            Console.WriteLine("Test pictures: " + dir);
             return _fail == 0 ? 0 : 1;
         }
 
@@ -195,113 +177,37 @@ namespace PokeSpriteCreator
             if (!ok) { _fail++; Console.WriteLine("FAIL: " + what); }
         }
 
-        // ------------------------------------------------------------------ sample parts (plain test shapes)
+        // ------------------------------------------------------------------ a plain test trainer
 
-        static int K = PixelImage.Rgb(0, 0, 0);
-        static readonly int Skin = PixelImage.Rgb(248, 208, 168), SkinD = PixelImage.Rgb(208, 152, 112);
+        static readonly int K = PixelImage.Rgb(0, 0, 0), Hair = PixelImage.Rgb(140, 90, 50), HairD = PixelImage.Rgb(90, 56, 34), Skin = PixelImage.Rgb(248, 208, 168),
+            Band = PixelImage.Rgb(220, 50, 50), Shirt = PixelImage.Rgb(60, 100, 220), Pants = PixelImage.Rgb(150, 150, 160), ShoeC = PixelImage.Rgb(200, 60, 60);
 
-        static void Rect(PixelImage img, int x0, int y0, int x1, int y1, int fill, int outline)
+        static void Rect(PixelImage img, int x0, int y0, int x1, int y1, int fill)
         {
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
-                    img.Set(x, y, (x == x0 || x == x1 || y == y0 || y == y1) ? outline : fill);
+                    img.Set(x, y, (x == x0 || x == x1 || y == y0 || y == y1) ? K : fill);
         }
 
-        static void Oval(PixelImage img, int x0, int y0, int x1, int y1, int fill, int outline, bool topOnly = false)
+        /// <summary>A simple standing trainer drawn with boxes (hair, headband, face, shirt, trousers, shoes), feet on row top+76.</summary>
+        static PixelImage TestTrainer(int w, int h, int arm, int top)
         {
-            var pts = SpriteCanvas.EllipsePoints(new Point(x0, y0), new Point(x1, y1), true).ToList();
-            var set = new HashSet<Point>(pts);
-            foreach (var p in pts)
-            {
-                if (topOnly && p.Y > (y0 + y1) / 2) continue;
-                bool edge = !set.Contains(new Point(p.X + 1, p.Y)) || !set.Contains(new Point(p.X - 1, p.Y)) || !set.Contains(new Point(p.X, p.Y + 1)) || !set.Contains(new Point(p.X, p.Y - 1));
-                if (topOnly && p.Y == (y0 + y1) / 2) edge = true;
-                img.Set(p.X, p.Y, edge ? outline : fill);
-            }
-        }
-
-        static void Save(PixelImage img, string root, string rel)
-        {
-            var path = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            img.Save(path);
-        }
-
-        /// <summary>A front pose outline: head, body, arms, legs drawn as black outlines with an empty inside.</summary>
-        static PixelImage FrontPose(int arms)
-        {
-            var p = new PixelImage(64, 64);
-            Oval(p, 24, 6, 39, 21, 0, K);                 // head
-            Rect(p, 23, 22, 40, 44, 0, K);                // body
-            Rect(p, 17, 23 - arms, 22, 40 - arms, 0, K);  // left arm
-            Rect(p, 41, 23, 46, 40, 0, K);                // right arm
-            Rect(p, 24, 45, 31, 61, 0, K);                // legs
-            Rect(p, 32, 45, 39, 61, 0, K);
+            var p = new PixelImage(w, h);
+            int ox = (w - 80) / 2 + 24, oy = top;
+            Rect(p, ox + 2, oy, ox + 29, oy + 12, Hair);            // hair
+            for (int x = ox + 4; x < ox + 28; x++) p.Set(x, oy + 3, HairD);
+            Rect(p, ox + 2, oy + 12, ox + 29, oy + 15, Band);       // headband
+            Rect(p, ox + 4, oy + 15, ox + 27, oy + 26, Skin);       // face
+            p.Set(ox + 10, oy + 19, K); p.Set(ox + 20, oy + 19, K);
+            Rect(p, ox + 12, oy + 26, ox + 19, oy + 28, Skin);      // neck
+            Rect(p, ox + 2, oy + 28, ox + 29, oy + 50, Shirt);      // shirt
+            Rect(p, ox - 4, oy + 29 - arm * 4, ox + 2, oy + 46 - arm * 4, Shirt); // arms
+            Rect(p, ox + 29, oy + 29, ox + 35, oy + 46, Shirt);
+            Rect(p, ox + 4, oy + 50, ox + 15, oy + 72, Pants);      // legs
+            Rect(p, ox + 16, oy + 50, ox + 27, oy + 72, Pants);
+            Rect(p, ox + 2, oy + 72, ox + 15, oy + 76, ShoeC);      // shoes
+            Rect(p, ox + 16, oy + 72, ox + 29, oy + 76, ShoeC);
             return p;
-        }
-
-        public static void MakeSampleParts(string root)
-        {
-            int blue = PixelImage.Rgb(60, 100, 220), blueD = PixelImage.Rgb(30, 60, 160), brown = PixelImage.Rgb(140, 90, 50), brownD = PixelImage.Rgb(90, 55, 30);
-            int red = PixelImage.Rgb(220, 50, 50), redD = PixelImage.Rgb(150, 20, 30), grey = PixelImage.Rgb(80, 80, 96);
-            Save(FrontPose(0), root, "Gen 3/Front/Poses/Standing.png");
-            Save(FrontPose(4), root, "Gen 3/Front/Poses/Waving.png");
-
-            var shirt = new PixelImage(64, 64); Rect(shirt, 23, 22, 40, 44, blue, K); for (int y = 23; y < 44; y++) shirt.Set(39, y, blueD);
-            Rect(shirt, 17, 23, 22, 32, blue, K); Rect(shirt, 41, 23, 46, 32, blue, K);
-            Save(shirt, root, "Gen 3/Front/Tops/Shirt.png");
-            var pants = new PixelImage(64, 64); Rect(pants, 24, 45, 31, 58, grey, K); Rect(pants, 32, 45, 39, 58, grey, K);
-            Save(pants, root, "Gen 3/Front/Bottoms/Pants.png");
-            var shoes = new PixelImage(64, 64); Rect(shoes, 23, 58, 31, 62, red, K); Rect(shoes, 32, 58, 40, 62, red, K);
-            Save(shoes, root, "Gen 3/Front/Shoes/Sneakers.png");
-            var hair = new PixelImage(64, 64); Oval(hair, 23, 4, 40, 17, brown, K, true); for (int x = 26; x < 38; x++) hair.Set(x, 7, brownD);
-            Save(hair, root, "Gen 3/Front/Hair/Short.png");
-            var hairL = new PixelImage(64, 64); Oval(hairL, 22, 4, 41, 19, brown, K, true); Rect(hairL, 21, 11, 24, 30, brown, K); Rect(hairL, 39, 11, 42, 30, brown, K);
-            Save(hairL, root, "Gen 3/Front/Hair/Long.png");
-            var cap = new PixelImage(64, 64); Oval(cap, 23, 2, 40, 15, red, K, true); Rect(cap, 22, 9, 46, 11, redD, K);
-            Save(cap, root, "Gen 3/Front/Hats/Cap.png");
-            var beanie = new PixelImage(64, 64); Oval(beanie, 23, 1, 40, 16, PixelImage.Rgb(90, 170, 90), K, true);
-            Save(beanie, root, "Gen 3/Front/Hats/Beanie.png");
-            var shadesImg = new PixelImage(14, 4); Rect(shadesImg, 0, 0, 5, 3, grey, K); Rect(shadesImg, 8, 0, 13, 3, grey, K); shadesImg.Set(6, 1, K); shadesImg.Set(7, 1, K);
-            Save(shadesImg, root, "Gen 3/Front/Sunglasses/Shades.png");
-            var packFront = new PixelImage(64, 64); for (int y = 22; y < 44; y++) { packFront.Set(26, y, brownD); packFront.Set(37, y, brownD); }
-            Save(packFront, root, "Gen 3/Front/Backpacks/Pack.png");
-            var packBehind = new PixelImage(64, 64); Rect(packBehind, 18, 20, 45, 42, PixelImage.Rgb(120, 80, 40), K);
-            Save(packBehind, root, "Gen 3/Front/Backpacks/Pack_behind.png");
-
-            // back sprite: 4-frame throw (the arm rises)
-            var back = new PixelImage(256, 64);
-            for (int f = 0; f < 4; f++)
-            {
-                int ox = f * 64;
-                Oval(back, ox + 22, 8, ox + 41, 27, 0, K);
-                Rect(back, ox + 18, 28, ox + 45, 63, 0, K);
-                Rect(back, ox + 46, 40 - f * 8, ox + 52, 56 - f * 8, 0, K);
-            }
-            Save(back, root, "Gen 3/Back/Poses/Throw.png");
-            var backHair = new PixelImage(64, 64); Oval(backHair, 21, 6, 42, 26, brown, K);
-            Save(backHair, root, "Gen 3/Back/Hair/Short.png");
-
-            // overworld walk sheet 4x4 frames of 16x32
-            var ow = new PixelImage(64, 128);
-            var owHair = new PixelImage(128, 256);
-            for (int i = 0; i < 16; i++)
-            {
-                int ox = (i % 4) * 16, oy = (i / 4) * 32, step = (i % 2 == 1) ? 1 : 0;
-                Oval(ow, ox + 3, oy + 4, ox + 12, oy + 13, Skin, K);
-                Rect(ow, ox + 4, oy + 14, ox + 11, oy + 24, SkinD, K);
-                Rect(ow, ox + 4, oy + 25, ox + 7, oy + 30 - step, SkinD, K);
-                Rect(ow, ox + 8, oy + 25, ox + 11, oy + 30 - (1 - step) * (i % 4 == 3 ? 1 : 0), SkinD, K);
-                // hair drawn pixel-doubled to test auto shrinking
-                for (int y = 3; y <= 8; y++) for (int x = 3; x <= 12; x++)
-                    { int c = y == 3 || x == 3 || x == 12 ? K : brown; for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) owHair.Set((ox + x) * 2 + a, (oy + y) * 2 + b, c); }
-            }
-            Save(ow, root, "Gen 3/Overworld/Walk/Poses/Body.png");
-            Save(owHair, root, "Gen 3/Overworld/Walk/Hair/Spiky.png");
-            var bike = new PixelImage(64, 128);
-            for (int i = 0; i < 16; i++) { int ox = (i % 4) * 16, oy = (i / 4) * 32; Oval(bike, ox + 2, oy + 22, ox + 13, oy + 31, 0, red); }
-            Save(bike, root, "Gen 3/Overworld/Bike/Bikes/Basic.png");
-            Save(ow, root, "Gen 3/Overworld/Bike/Poses/Rider.png");
         }
     }
 }

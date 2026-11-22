@@ -20,8 +20,7 @@ namespace PokeSpriteCreator.UI
         Point _start, _last, _panFrom, _panStart;
         PixelImage _shapeBase;
         List<PixelImage> _moveBase;
-        int _offX0, _offY0;
-        PaintLayer _target;
+        Layer _target;
 
         public event Action<Point?, int> HoverChanged;
         public event Action ZoomChanged;
@@ -132,22 +131,6 @@ namespace PokeSpriteCreator.UI
             }
             using (var p = new Pen(Theme.Border)) g.DrawRectangle(p, r.X - 1, r.Y - 1, r.Width + 1, r.Height + 1);
 
-            // where the selected part sits (loose pieces, or while moving)
-            var pl = E.CurrentPart;
-            if (pl != null && pl.Visible && (E.Tool == Tool.Move || pl.IsLoose(E.Doc.Layout)))
-            {
-                var img = pl.FrameImage(E.Doc.Layout, E.Frame, false);
-                if (img != null)
-                {
-                    var b = img.Bounds();
-                    if (!b.IsEmpty)
-                    {
-                        int bx = pl.FlipH ? img.W - b.Right : b.X;
-                        using (var p = new Pen(Theme.Accent) { DashStyle = DashStyle.Dash })
-                            g.DrawRectangle(p, r.X + (pl.OffsetX + bx) * Zoom, r.Y + (pl.OffsetY + b.Y) * Zoom, b.Width * Zoom - 1, b.Height * Zoom - 1);
-                    }
-                }
-            }
             if (E.Mirror)
             {
                 int mx = r.X + E.Doc.Layout.FrameW * Zoom / 2;
@@ -198,7 +181,6 @@ namespace PokeSpriteCreator.UI
             Capture = true;
             int color = e.Button == MouseButtons.Left ? E.Primary : E.Secondary;
             var tool = E.Tool;
-            bool empty = E.CurrentPart != null && E.Doc.Composite(E.Frame).Get(p.X, p.Y) == 0;
             if ((ModifierKeys & Keys.Alt) != 0 && (tool == Tool.Pencil || tool == Tool.Fill || tool == Tool.Line || tool == Tool.Rectangle || tool == Tool.Ellipse)) tool = Tool.Picker;
 
             switch (tool)
@@ -206,19 +188,15 @@ namespace PokeSpriteCreator.UI
                 case Tool.Picker: Pick(p, e.Button); _down = false; break;
                 case Tool.Pencil:
                 case Tool.Eraser:
-                    if (tool == Tool.Eraser && E.CurrentPaint == null)
-                    {
-                        E.Say(E.CurrentPart != null ? "Parts can't be erased. Hide the layer, pick another part, or use Layer > Convert to paint layer to edit its pixels." : "Select a paint layer to erase on.");
-                        _down = false; break;
-                    }
+                    if (tool == Tool.Eraser && E.Current == null) { E.Say("Select a layer to erase on."); _down = false; break; }
                     E.BeginChange();
-                    _target = E.EnsurePaintLayer(empty);
+                    _target = E.EnsureLayer();
                     Plot(_target.Frames[E.Frame], p.X, p.Y, tool == Tool.Eraser ? 0 : color);
                     E.Changed();
                     break;
                 case Tool.Fill:
                     E.BeginChange();
-                    _target = E.EnsurePaintLayer(empty);
+                    _target = E.EnsureLayer();
                     Fill(p, color);
                     E.Changed();
                     _down = false;
@@ -227,15 +205,14 @@ namespace PokeSpriteCreator.UI
                 case Tool.Rectangle:
                 case Tool.Ellipse:
                     E.BeginChange();
-                    _target = E.EnsurePaintLayer(empty);
+                    _target = E.EnsureLayer();
                     _shapeBase = _target.Frames[E.Frame].Clone();
                     DrawShape(p, color);
                     break;
                 case Tool.Move:
                     if (E.Current == null) { E.Say("Select a layer to move."); _down = false; break; }
                     E.BeginChange();
-                    if (E.CurrentPart != null) { _offX0 = E.CurrentPart.OffsetX; _offY0 = E.CurrentPart.OffsetY; }
-                    else _moveBase = E.CurrentPaint.Frames.Select(f => f.Clone()).ToList();
+                    _moveBase = E.Current.Frames.Select(f => f.Clone()).ToList();
                     break;
                 case Tool.Recolor:
                     Recolor(p, color);
@@ -289,12 +266,11 @@ namespace PokeSpriteCreator.UI
                     if (p == _last) break;
                     _last = p;
                     int dx = p.X - _start.X, dy = p.Y - _start.Y;
-                    if (E.CurrentPart != null) { E.CurrentPart.OffsetX = _offX0 + dx; E.CurrentPart.OffsetY = _offY0 + dy; }
-                    else if (E.CurrentPaint != null && _moveBase != null)
+                    if (E.Current != null && _moveBase != null)
                     {
                         bool thisOnly = (ModifierKeys & Keys.Alt) != 0;
                         for (int i = 0; i < _moveBase.Count; i++)
-                            E.CurrentPaint.Frames[i] = (thisOnly && i != E.Frame) ? _moveBase[i].Clone() : _moveBase[i].Shift(dx, dy);
+                            E.Current.Frames[i] = (thisOnly && i != E.Frame) ? _moveBase[i].Clone() : _moveBase[i].Shift(dx, dy);
                     }
                     E.Changed();
                     break;
@@ -352,8 +328,7 @@ namespace PokeSpriteCreator.UI
         {
             if (E.Doc == null || E.Current == null) return;
             E.BeginChange("nudge");
-            if (E.CurrentPart != null) { E.CurrentPart.OffsetX += dx; E.CurrentPart.OffsetY += dy; }
-            else for (int i = 0; i < E.CurrentPaint.Frames.Count; i++) E.CurrentPaint.Frames[i] = E.CurrentPaint.Frames[i].Shift(dx, dy);
+            for (int i = 0; i < E.Current.Frames.Count; i++) E.Current.Frames[i] = E.Current.Frames[i].Shift(dx, dy);
             E.Changed();
         }
 
@@ -433,20 +408,12 @@ namespace PokeSpriteCreator.UI
                 E.Doc.ReplaceColorEverywhere(from, color);
                 E.Say("Changed " + PixelImage.Hex(from) + " to " + PixelImage.Hex(color) + " on every layer.");
             }
-            else if (E.CurrentPart != null)
+            else if (E.Current != null)
             {
-                var pl = E.CurrentPart;
-                var hits = pl.SourcePalette().Where(s => pl.MapColor(s) == from).ToList();
-                if (hits.Count == 0) { E.Say("That colour isn't in the selected part (\"" + pl.Name + "\"). Select its layer, or hold Shift to change the colour everywhere."); return; }
+                if (!E.Current.Frames.Any(f => f.Px.Contains(from))) { E.Say("That colour isn't on the selected layer. Hold Shift to change it on every layer."); return; }
                 E.BeginChange();
-                foreach (var s in hits) pl.ColorMap[s] = color;
-                E.Say(pl.Name + ": " + PixelImage.Hex(from) + " is now " + PixelImage.Hex(color) + ".  (Shift+click changes it on every layer)");
-            }
-            else if (E.CurrentPaint != null)
-            {
-                if (!E.CurrentPaint.Frames.Any(f => f.Px.Contains(from))) { E.Say("That colour isn't on the selected paint layer. Hold Shift to change it everywhere."); return; }
-                E.BeginChange();
-                foreach (var f in E.CurrentPaint.Frames)
+                E.Say(PixelImage.Hex(from) + " is now " + PixelImage.Hex(color) + " on \"" + E.Current.Name + "\".  (Shift+click changes it on every layer)");
+                foreach (var f in E.Current.Frames)
                     for (int i = 0; i < f.Px.Length; i++) if (f.Px[i] == from) f.Px[i] = color;
             }
             else return;

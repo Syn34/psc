@@ -14,7 +14,6 @@ namespace PokeSpriteCreator.UI
     public class Editor
     {
         public SpriteDocument Doc;
-        public PartLibrary Lib;
         public Settings Settings;
         public int LayerIndex = -1;
         public int Frame;
@@ -35,13 +34,13 @@ namespace PokeSpriteCreator.UI
         public event Action FrameChanged;
         public event Action ColorsChanged;
         public event Action ToolChanged;
+        /// <summary>The document was saved (or opened from a file).</summary>
+        public event Action Saved;
         public event Action<string> Status;
 
-        public Editor(Settings s) { Settings = s; Lib = new PartLibrary(s.PartsFolder, Settings.BuiltInPartsFolder); }
+        public Editor(Settings s) { Settings = s; }
 
         public Layer Current { get { return Doc != null && LayerIndex >= 0 && LayerIndex < Doc.Layers.Count ? Doc.Layers[LayerIndex] : null; } }
-        public PartLayer CurrentPart { get { return Current as PartLayer; } }
-        public PaintLayer CurrentPaint { get { return Current as PaintLayer; } }
 
         public void Say(string msg) { if (Status != null) Status(msg); }
 
@@ -58,9 +57,11 @@ namespace PokeSpriteCreator.UI
             if (DocChanged != null) DocChanged();
         }
 
+        public void NotifySaved() { if (Saved != null) Saved(); }
+
         // ------------------------------------------------------------------ change notifications
 
-        /// <summary>Call before changing the document. Calls with the same key in quick succession (slider drags) share one Undo step.</summary>
+        /// <summary>Call before changing the document. Calls with the same key in quick succession share one Undo step.</summary>
         public void BeginChange(string key = null)
         {
             if (Doc == null) return;
@@ -152,95 +153,39 @@ namespace PokeSpriteCreator.UI
 
         // ------------------------------------------------------------------ layers
 
-        /// <summary>
-        /// The layer free-hand drawing goes on: the selected paint layer, or (when a part is selected)
-        /// the paint layer just above it, made if needed. Parts themselves are never drawn on.
-        /// </summary>
-        public PaintLayer EnsurePaintLayer(bool emptySpot = false)
+        /// <summary>The layer drawing goes on (made if the sprite has none).</summary>
+        public Layer EnsureLayer()
         {
             if (Doc == null) return null;
-            var p = CurrentPaint;
-            if (p != null) return p;
-            int above = LayerIndex + 1;
-            int lowest = Doc.Layers.FindIndex(l => l is PaintLayer);
-            if (emptySpot && lowest >= 0)
-            {
-                // colouring in empty space (e.g. inside the pose outline): use the bottom paint layer, under the clothes
-                LayerIndex = lowest;
-                Say("Drawing on \"" + Doc.Layers[lowest].Name + "\" (the paint layer under the parts). Select another layer to draw somewhere else.");
-            }
-            else if (above < Doc.Layers.Count && Doc.Layers[above] is PaintLayer)
-            {
-                LayerIndex = above;
-            }
-            else
-            {
-                var l = Doc.NewPaintLayer(Doc.UniqueName("Paint"));
-                Doc.Layers.Insert(above, l);
-                LayerIndex = above;
-                if (LayersChanged != null) LayersChanged();
-                Say("Parts aren't drawn on directly, so this went on the paint layer \"" + l.Name + "\". (Layer > Convert to paint layer lets you edit a part's pixels.)");
-            }
+            if (Current != null) return Current;
+            var l = Doc.NewLayer(Doc.UniqueName("Paint"));
+            Doc.Layers.Add(l);
+            LayerIndex = Doc.Layers.Count - 1;
+            if (LayersChanged != null) LayersChanged();
             if (SelectionChanged != null) SelectionChanged();
-            return CurrentPaint;
+            return l;
         }
 
-        public void AddPaintLayer()
+        public void AddLayer()
         {
             if (Doc == null) return;
             BeginChange();
-            var l = Doc.NewPaintLayer(Doc.UniqueName("Paint"));
+            var l = Doc.NewLayer(Doc.UniqueName("Paint"));
             int at = LayerIndex + 1;
             Doc.Layers.Insert(at, l);
             LayerIndex = at;
             LayersEdited();
         }
 
-        /// <summary>Puts a part on the sprite. Replaces the selected layer's part when it's the same category,
-        /// otherwise the first layer of that category; extra = always add a new layer.</summary>
-        public void SetPart(Part p, bool extra)
-        {
-            if (Doc == null || p == null) return;
-            if (p.Sheet == null) { Say("Couldn't read the picture " + p.Path); return; }
-            BeginChange();
-            PartLayer existing = null;
-            if (!extra)
-            {
-                var cur = CurrentPart;
-                existing = cur != null && cur.Category == p.Category ? cur : Doc.Layers.OfType<PartLayer>().FirstOrDefault(l => l.Category == p.Category);
-            }
-            if (existing != null)
-            {
-                bool wasLoose = existing.IsLoose(Doc.Layout);
-                existing.Part = p; existing.PartName = p.Name;
-                // a new picture means new colours: keep hue/sat/brightness, drop exact swaps that no longer apply
-                var src = new HashSet<int>(existing.SourcePalette());
-                foreach (var k in existing.ColorMap.Keys.ToList()) if (!src.Contains(k)) existing.ColorMap.Remove(k);
-                if (!existing.IsLoose(Doc.Layout)) { existing.OffsetX = 0; existing.OffsetY = 0; }
-                else if (!wasLoose) { var fresh = Doc.MakePartLayer(p); existing.OffsetX = fresh.OffsetX; existing.OffsetY = fresh.OffsetY; }
-                LayerIndex = Doc.Layers.IndexOf(existing);
-            }
-            else
-            {
-                var l = Doc.MakePartLayer(p);
-                if (extra) l.Name = Doc.UniqueName(p.Category);
-                int at = Doc.InsertIndexFor(p.Category, Lib.OrderFor(Doc.Style.Gen, Doc.Kind, Doc.Sheet));
-                Doc.Layers.Insert(at, l);
-                LayerIndex = at;
-            }
-            LayersEdited();
-            Say(p.Category + ": " + p.Name + (p.FramesFor(Doc.Layout).Loose ? "  (a loose piece - drag it into place with the Move tool or the arrow keys)" : ""));
-        }
-
-        public void RemoveCategory(string cat)
+        /// <summary>Adds a picture as a new layer above the selected one.</summary>
+        public void AddLayerFromFrames(string name, IList<PixelImage> frames)
         {
             if (Doc == null) return;
-            var l = CurrentPart != null && CurrentPart.Category == cat ? CurrentPart : Doc.Layers.OfType<PartLayer>().LastOrDefault(x => x.Category == cat);
-            if (l == null) return;
             BeginChange();
-            int i = Doc.Layers.IndexOf(l);
-            Doc.Layers.RemoveAt(i);
-            LayerIndex = Math.Min(i, Doc.Layers.Count - 1);
+            var l = Doc.LayerFromFrames(Doc.UniqueName(name), frames);
+            int at = LayerIndex + 1;
+            Doc.Layers.Insert(at, l);
+            LayerIndex = at;
             LayersEdited();
         }
 
@@ -277,27 +222,12 @@ namespace PokeSpriteCreator.UI
             LayersEdited();
         }
 
-        /// <summary>Turns a part layer into a paint layer (its pictures, with its colours, become editable pixels).</summary>
-        public void ConvertToPaint()
-        {
-            var pl = CurrentPart;
-            if (pl == null) return;
-            BeginChange();
-            var p = Doc.NewPaintLayer(pl.Name);
-            p.Visible = pl.Visible;
-            for (int i = 0; i < Doc.FrameCount; i++) p.Frames[i] = Doc.LayerImage(pl, i);
-            Doc.Layers[LayerIndex] = p;
-            LayersEdited();
-            Say("\"" + p.Name + "\" is now a paint layer: its pixels can be drawn over and erased.");
-        }
-
         public void MergeDown()
         {
             if (Current == null || LayerIndex == 0) return;
-            var below = Doc.Layers[LayerIndex - 1] as PaintLayer;
-            if (below == null) { Say("Merge down needs a paint layer underneath (convert the part below to a paint layer first)."); return; }
+            var below = Doc.Layers[LayerIndex - 1];
             BeginChange();
-            for (int i = 0; i < Doc.FrameCount; i++) below.Frames[i].Blit(Doc.LayerImage(Current, i), 0, 0);
+            for (int i = 0; i < Doc.FrameCount; i++) below.Frames[i].Blit(Current.Frames[i], 0, 0);
             Doc.Layers.RemoveAt(LayerIndex);
             LayerIndex--;
             LayersEdited();
@@ -308,48 +238,48 @@ namespace PokeSpriteCreator.UI
         public void CopyFrame()
         {
             if (Doc == null) return;
-            var p = CurrentPaint;
-            FrameClipboard = p != null ? p.Frames[Frame].Clone() : Doc.Composite(Frame);
-            Say(p != null ? "Copied frame " + (Frame + 1) + " of \"" + p.Name + "\"." : "Copied the whole frame " + (Frame + 1) + " (paste puts it on a paint layer).");
+            var l = Current;
+            FrameClipboard = l != null ? l.Frames[Frame].Clone() : Doc.Composite(Frame);
+            Say(l != null ? "Copied frame " + (Frame + 1) + " of \"" + l.Name + "\"." : "Copied frame " + (Frame + 1) + ".");
         }
 
         public void PasteFrame()
         {
             if (Doc == null || FrameClipboard == null) return;
             BeginChange();
-            var p = EnsurePaintLayer();
-            p.Frames[Frame] = FrameClipboard.Crop(0, 0, Doc.Layout.FrameW, Doc.Layout.FrameH);
+            var l = EnsureLayer();
+            l.Frames[Frame] = FrameClipboard.Crop(0, 0, Doc.Layout.FrameW, Doc.Layout.FrameH);
             Changed();
         }
 
         public void ClearFrame()
         {
-            var p = CurrentPaint;
-            if (p == null) return;
+            var l = Current;
+            if (l == null) return;
             BeginChange();
-            p.Frames[Frame].Clear();
+            l.Frames[Frame].Clear();
             Changed();
         }
 
         public void CopyToAllFrames()
         {
-            var p = CurrentPaint;
-            if (p == null) { Say("Select a paint layer to copy its frame to the others."); return; }
+            var l = Current;
+            if (l == null) { Say("Select a layer to copy its frame to the others."); return; }
             BeginChange();
-            for (int i = 0; i < Doc.FrameCount; i++) if (i != Frame) p.Frames[i] = p.Frames[Frame].Clone();
+            for (int i = 0; i < Doc.FrameCount; i++) if (i != Frame) l.Frames[i] = l.Frames[Frame].Clone();
             Changed();
         }
 
-        /// <summary>Overworld: the Right row becomes a mirror of the Left row (or the other way) on every paint layer.</summary>
+        /// <summary>Overworld: the Right row becomes a mirror of the Left row (or the other way) on every layer.</summary>
         public void MirrorRows(bool leftToRight)
         {
             if (Doc == null || Doc.Kind != SpriteKind.Overworld) return;
             BeginChange();
             int from = leftToRight ? 1 : 2, to = leftToRight ? 2 : 1, cols = Doc.Layout.Cols;
-            foreach (var p in Doc.Layers.OfType<PaintLayer>())
-                for (int c = 0; c < cols; c++) p.Frames[to * cols + c] = p.Frames[from * cols + c].FlipH();
+            foreach (var l in Doc.Layers)
+                for (int c = 0; c < cols; c++) l.Frames[to * cols + c] = l.Frames[from * cols + c].FlipH();
             Changed();
-            Say(leftToRight ? "Right-facing frames are now a mirror of the left-facing ones (paint layers)." : "Left-facing frames are now a mirror of the right-facing ones (paint layers).");
+            Say(leftToRight ? "Right-facing frames are now a mirror of the left-facing ones." : "Left-facing frames are now a mirror of the right-facing ones.");
         }
 
         public void SetFrameCount(int n)

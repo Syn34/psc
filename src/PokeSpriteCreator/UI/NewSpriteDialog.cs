@@ -1,34 +1,31 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using PokeSpriteCreator.Model;
 
 namespace PokeSpriteCreator.UI
 {
-    /// <summary>New sprite: pick the generation style, the kind of sprite and a pose outline to start from (or a blank canvas).</summary>
+    /// <summary>New sprite: pick the generation style and the kind of sprite, then start blank or from a picture (PNG / GIF).</summary>
     public class NewSpriteDialog : Form
     {
-        readonly PartLibrary _lib;
         readonly ListBox _gens;
-        readonly Label _desc, _sizeInfo;
-        readonly RadioButton _front, _back, _ow;
+        readonly Label _desc, _sizeInfo, _picNote;
+        readonly RadioButton _front, _back, _ow, _blank, _fromPic;
         readonly ComboBox _sheet;
-        readonly TextBox _name;
+        readonly TextBox _name, _picPath;
         readonly NumericUpDown _w, _h, _frames;
         readonly Label _framesLbl, _sheetLbl;
-        readonly ListView _poses;
-        readonly ImageList _thumbs;
-        readonly Label _poseHint;
+        readonly PreviewBox _preview;
+        List<PixelImage> _pics;
         bool _filling;
-        List<Part> _poseParts = new List<Part>();
 
         public SpriteDocument Result;
 
-        public NewSpriteDialog(PartLibrary lib, Settings s)
+        public NewSpriteDialog(Settings s, string picture = null)
         {
-            _lib = lib;
             Text = "New sprite";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -43,11 +40,15 @@ namespace PokeSpriteCreator.UI
             _desc = new Label { Left = 14, Top = 136, Width = 330, Height = 74, Tag = "sub", Font = Theme.Small };
 
             var l2 = new Label { Text = "Sprite", Font = Theme.Heading, Left = 14, Top = 214, Width = 300, Tag = "accent" };
-            _front = new RadioButton { Text = KindNames.Label(SpriteKind.Front), Left = 14, Top = 240, Width = 330, Checked = true };
-            _back = new RadioButton { Text = KindNames.Label(SpriteKind.Back), Left = 14, Top = 264, Width = 330 };
-            _ow = new RadioButton { Text = KindNames.Label(SpriteKind.Overworld) + " (walking, running, bike…)", Left = 14, Top = 288, Width = 330 };
+            var kindBox = new Panel { Left = 14, Top = 238, Width = 340, Height = 72 };
+            _front = new RadioButton { Text = KindNames.Label(SpriteKind.Front) + " (walking sprite made from it)", Left = 0, Top = 2, Width = 330, Checked = true };
+            _back = new RadioButton { Text = KindNames.Label(SpriteKind.Back), Left = 0, Top = 26, Width = 330 };
+            _ow = new RadioButton { Text = KindNames.Label(SpriteKind.Overworld) + " (walking, running, bike…)", Left = 0, Top = 50, Width = 330 };
+            kindBox.Controls.AddRange(new Control[] { _front, _back, _ow });
             _sheetLbl = new Label { Text = "Sheet", Left = 34, Top = 318, Width = 50 };
             _sheet = new ComboBox { Left = 90, Top = 314, Width = 140, DropDownStyle = ComboBoxStyle.DropDown };
+            foreach (var sh in OverworldSheets.Defaults) _sheet.Items.Add(sh);
+            _sheet.Text = "Walk";
 
             var ln = new Label { Text = "Name", Left = 14, Top = 352, Width = 70 };
             _name = new TextBox { Left = 90, Top = 348, Width = 200, Text = "NEWTRAINER", CharacterCasing = CharacterCasing.Upper };
@@ -62,40 +63,66 @@ namespace PokeSpriteCreator.UI
             _sizeInfo = new Label { Left = 14, Top = 434, Width = 330, Height = 34, Tag = "sub", Font = Theme.Small };
 
             var l3 = new Label { Text = "Start from", Font = Theme.Heading, Left = 364, Top = 12, Width = 300, Tag = "accent" };
-            _thumbs = new ImageList { ImageSize = new Size(96, 96), ColorDepth = ColorDepth.Depth32Bit };
-            _poses = new ListView { Left = 364, Top = 36, Width = 422, Height = 400, View = View.LargeIcon, LargeImageList = _thumbs, MultiSelect = false, HideSelection = false };
-            _poseHint = new Label { Left = 364, Top = 440, Width = 422, Height = 34, Tag = "sub", Font = Theme.Small };
+            var startBox = new Panel { Left = 364, Top = 36, Width = 222, Height = 50 };
+            _blank = new RadioButton { Text = "A blank canvas (draw it yourself)", Left = 0, Top = 2, Width = 222, Checked = true };
+            _fromPic = new RadioButton { Text = "A picture (PNG, GIF or BMP)", Left = 0, Top = 26, Width = 220 };
+            startBox.Controls.AddRange(new Control[] { _blank, _fromPic });
+            var browse = new Button { Text = "Choose picture…", Left = 590, Top = 59, Width = 130, Height = 26 };
+            _picPath = new TextBox { Left = 382, Top = 90, Width = 402, ReadOnly = true };
+            _preview = new PreviewBox { Left = 382, Top = 120, Width = 402, Height = 300 };
+            _picNote = new Label { Left = 382, Top = 424, Width = 402, Height = 46, Tag = "sub", Font = Theme.Small };
 
-            var ok = new Button { Text = "Create", Left = 600, Top = 480, Width = 90, Height = 28, DialogResult = DialogResult.None };
+            var ok = new Button { Text = "Create", Left = 600, Top = 480, Width = 90, Height = 28 };
             var cancel = new Button { Text = "Cancel", Left = 696, Top = 480, Width = 90, Height = 28, DialogResult = DialogResult.Cancel };
             AcceptButton = ok; CancelButton = cancel;
 
-            Controls.AddRange(new Control[] { l1, _gens, _desc, l2, _front, _back, _ow, _sheetLbl, _sheet, ln, _name, nameHint, ls, _w, lx, _h, _framesLbl, _frames, _sizeInfo, l3, _poses, _poseHint, ok, cancel });
+            Controls.AddRange(new Control[] { l1, _gens, _desc, l2, kindBox, _sheetLbl, _sheet, ln, _name, nameHint, ls, _w, lx, _h, _framesLbl, _frames, _sizeInfo,
+                l3, startBox, browse, _picPath, _preview, _picNote, ok, cancel });
 
-            _gens.SelectedIndexChanged += (a, b) => Changed(true);
-            _front.CheckedChanged += (a, b) => { if (_front.Checked) Changed(true); };
-            _back.CheckedChanged += (a, b) => { if (_back.Checked) Changed(true); };
-            _ow.CheckedChanged += (a, b) => { if (_ow.Checked) Changed(true); };
-            _sheet.SelectedIndexChanged += (a, b) => Changed(true);
-            _sheet.Leave += (a, b) => Changed(true);
-            _poses.SelectedIndexChanged += (a, b) => { if (!_filling) PoseChosen(); };
-            _poses.DoubleClick += (a, b) => Create();
+            _gens.SelectedIndexChanged += (a, b) => Changed();
+            _front.CheckedChanged += (a, b) => { if (_front.Checked) Changed(); };
+            _back.CheckedChanged += (a, b) => { if (_back.Checked) Changed(); };
+            _ow.CheckedChanged += (a, b) => { if (_ow.Checked) Changed(); };
+            _blank.CheckedChanged += (a, b) => Changed();
+            _w.ValueChanged += (a, b) => UpdateSizeInfo();
+            _h.ValueChanged += (a, b) => UpdateSizeInfo();
+            browse.Click += (a, b) => Browse();
             ok.Click += (a, b) => Create();
 
             _filling = true;
             _gens.SelectedIndex = Math.Max(0, Array.FindIndex(GenStyle.All, g => g.Gen == s.LastGen));
             if (s.LastKind == "Back") _back.Checked = true; else if (s.LastKind == "Overworld") _ow.Checked = true;
             _filling = false;
-            Changed(true);
             Theme.Apply(this);
-            _poses.BackColor = Theme.Input; _poses.ForeColor = Theme.Text;
+            if (picture != null) LoadPicture(picture); else Changed();
         }
 
         GenStyle Style { get { return (GenStyle)(_gens.SelectedItem ?? GenStyle.All[2]); } }
         SpriteKind Kind { get { return _back.Checked ? SpriteKind.Back : _ow.Checked ? SpriteKind.Overworld : SpriteKind.Front; } }
         string Sheet { get { var t = (_sheet.Text ?? "").Trim(); return t.Length == 0 ? "Walk" : t; } }
+        bool UsePicture { get { return _fromPic.Checked && _pics != null; } }
 
-        void Changed(bool resetSize)
+        void Browse()
+        {
+            using (var ofd = new OpenFileDialog { Filter = ImageImport.Filter, Title = "Choose a sprite picture" })
+                if (ofd.ShowDialog(this) == DialogResult.OK) LoadPicture(ofd.FileName);
+        }
+
+        void LoadPicture(string path)
+        {
+            try { _pics = ImageImport.LoadFrames(path); }
+            catch (Exception ex) { MessageBox.Show(this, "Couldn't read that picture:\r\n" + ex.Message, Text); return; }
+            _picPath.Text = path;
+            _filling = true;
+            _fromPic.Checked = true;
+            var n = Path.GetFileNameWithoutExtension(path).Trim().ToUpperInvariant().Replace(' ', '_').Replace('-', '_');
+            if (n.StartsWith("SPR_")) n = n.Substring(4);
+            _name.Text = n;
+            _filling = false;
+            Changed();
+        }
+
+        void Changed()
         {
             if (_filling) return;
             _filling = true;
@@ -103,104 +130,37 @@ namespace PokeSpriteCreator.UI
             _desc.Text = st.Describe();
             bool ow = Kind == SpriteKind.Overworld;
             _sheet.Visible = _sheetLbl.Visible = ow;
-            if (ow && _sheet.Items.Count == 0 || ow && !_lib.Sheets(st.Gen).SequenceEqual(_sheet.Items.Cast<string>()))
-            {
-                var keep = _sheet.Text;
-                _sheet.Items.Clear();
-                foreach (var sh in _lib.Sheets(st.Gen)) _sheet.Items.Add(sh);
-                _sheet.Text = string.IsNullOrEmpty(keep) ? "Walk" : keep;
-            }
             _frames.Visible = _framesLbl.Visible = Kind == SpriteKind.Back;
-            if (resetSize)
+            var lay = st.DefaultLayout(Kind);
+            string note = "";
+            if (UsePicture) lay = ImageImport.Suggest(_pics, Kind, st, out note);
+            _w.Value = Math.Max(_w.Minimum, Math.Min(_w.Maximum, lay.FrameW));
+            _h.Value = Math.Max(_h.Minimum, Math.Min(_h.Maximum, lay.FrameH));
+            _frames.Value = Math.Max(1, Math.Min(16, lay.Cols));
+            if (UsePicture)
             {
-                var lay = st.DefaultLayout(Kind);
-                _w.Value = lay.FrameW; _h.Value = lay.FrameH; _frames.Value = lay.Cols;
+                var frames = ImageImport.FramesFor(_pics, lay);
+                _preview.Image = SpriteDocument.MakeSheet(frames, lay, 1);
+                _preview.Caption = "Picture" + (_pics.Count > 1 ? " (" + _pics.Count + " frames)" : "");
+                _picNote.Text = note.Length > 0 ? note : "The picture fits " + st.Name + "'s size as it is.";
             }
+            else
+            {
+                _preview.Image = null; _preview.Caption = "";
+                _picNote.Text = "Choose a picture to edit one you already have, e.g. a sprite from the games or your own art.";
+            }
+            _preview.Invalidate();
             UpdateSizeInfo();
-            FillPoses();
             _filling = false;
         }
 
         void UpdateSizeInfo()
         {
-            var st = Style;
-            var def = st.DefaultLayout(Kind);
+            var def = Style.DefaultLayout(Kind);
             bool custom = _w.Value != def.FrameW || _h.Value != def.FrameH;
             _sizeInfo.Text = Kind == SpriteKind.Overworld
-                ? "4 × 4 frames: rows are Down, Left, Right, Up; columns are the walking steps." + (custom ? " (Size set by the pose.)" : "")
-                : custom ? "Size taken from the pose (the game's own size is " + def.FrameW + "×" + def.FrameH + ")." : "The game's own size. Export can scale it up for your game.";
-        }
-
-        void FillPoses()
-        {
-            _poses.BeginUpdate();
-            _poses.Items.Clear();
-            _thumbs.Images.Clear();
-            _thumbs.Images.Add(BlankThumb());
-            _poses.Items.Add(new ListViewItem("Blank canvas", 0) { Tag = null, Selected = true });
-            _poseParts = _lib.Parts(Style.Gen, Kind, Kind == SpriteKind.Overworld ? Sheet : null, PartLibrary.PoseCategory);
-            for (int i = 0; i < _poseParts.Count; i++)
-            {
-                var p = _poseParts[i];
-                PixelImage first = null;
-                var lay = LayoutFor(p);
-                if (p.Sheet != null && lay != null) first = p.FramesFor(lay).Front[0];
-                _thumbs.Images.Add(Pix.Thumb(first, 96, 96));
-                _poses.Items.Add(new ListViewItem(p.Name, i + 1) { Tag = p });
-            }
-            _poses.EndUpdate();
-            _poseHint.Text = _poseParts.Count == 0
-                ? "No poses for this style yet. Put outline pictures in Parts\\" + Style.Name + "\\" + KindNames.Folder(Kind) + (Kind == SpriteKind.Overworld ? "\\" + Sheet : "") + "\\Poses."
-                : "A pose is a blank outline to fill in. It also sets the canvas size.";
-        }
-
-        Bitmap BlankThumb()
-        {
-            var b = Pix.Thumb(null, 96, 96);
-            using (var g = Graphics.FromImage(b))
-            using (var p = new Pen(Color.FromArgb(150, 150, 160)) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
-                g.DrawRectangle(p, 20, 20, 55, 55);
-            return b;
-        }
-
-        /// <summary>The layout a pose picture implies (its own frame size, shrinking pixel-doubled art).</summary>
-        FrameLayout LayoutFor(Part p)
-        {
-            var img = p.Sheet;
-            if (img == null) return null;
-            var def = Style.DefaultLayout(Kind);
-            int w = img.W, h = img.H;
-            int k = 1;
-            for (int t = 4; t >= 2; t--)
-                if ((w > def.SheetW || h > def.SheetH) && img.IsBlocky(t)) { k = t; break; }
-            w /= k; h /= k;
-            switch (Kind)
-            {
-                case SpriteKind.Overworld: return new FrameLayout(Math.Max(1, w / 4), Math.Max(1, h / 4), 4, 4);
-                case SpriteKind.Back: { int f = Math.Max(1, w / Math.Max(1, h)); return new FrameLayout(h, h, f, 1); }
-                default: return new FrameLayout(w, h, 1, 1);
-            }
-        }
-
-        Part SelectedPose { get { return _poses.SelectedItems.Count > 0 ? _poses.SelectedItems[0].Tag as Part : null; } }
-
-        void PoseChosen()
-        {
-            var p = SelectedPose;
-            _filling = true;
-            if (p == null) { var def = Style.DefaultLayout(Kind); _w.Value = def.FrameW; _h.Value = def.FrameH; _frames.Value = def.Cols; }
-            else
-            {
-                var lay = LayoutFor(p);
-                if (lay != null)
-                {
-                    _w.Value = Math.Max(_w.Minimum, Math.Min(_w.Maximum, lay.FrameW));
-                    _h.Value = Math.Max(_h.Minimum, Math.Min(_h.Maximum, lay.FrameH));
-                    if (Kind == SpriteKind.Back) _frames.Value = Math.Max(1, Math.Min(16, lay.Cols));
-                }
-            }
-            UpdateSizeInfo();
-            _filling = false;
+                ? "4 × 4 frames: rows are Down, Left, Right, Up; columns are the walking steps."
+                : custom ? "Not the game's own size (" + def.FrameW + "×" + def.FrameH + ")." : "The game's own size. Export can scale it up for your game.";
         }
 
         void Create()
@@ -210,9 +170,8 @@ namespace PokeSpriteCreator.UI
                     : new FrameLayout((int)_w.Value, (int)_h.Value, 1, 1);
             var d = new SpriteDocument(Style, Kind, Kind == SpriteKind.Overworld ? Sheet : "Walk", lay);
             d.Name = string.IsNullOrWhiteSpace(_name.Text) ? "NEWTRAINER" : _name.Text.Trim().Replace(' ', '_');
-            var pose = SelectedPose;
-            if (pose != null) d.Layers.Add(d.MakePartLayer(pose));
-            d.Layers.Add(d.NewPaintLayer("Paint"));
+            if (UsePicture) d.Layers.Add(d.LayerFromFrames("Picture", ImageImport.FramesFor(_pics, lay)));
+            else d.Layers.Add(d.NewLayer("Paint"));
             Result = d;
             DialogResult = DialogResult.OK;
             Close();
