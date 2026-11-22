@@ -557,6 +557,36 @@ namespace PokeSpriteCreator
                 Check(wf.Overworld == walkSet, "walking sprites: an ordinary Undo on the main sprite doesn't touch them");
             }
 
+            // ---- walking sprites: something erased only goes to the poses facing the same way
+            {
+                var ef = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+                ef.Layers.Add(ef.NewLayer("Picture"));
+                var eSet = ef.MakeOverworld(null, null);
+                int bodyC = PixelImage.Rgb(40, 80, 160), outC = PixelImage.Rgb(0, 0, 0);
+                foreach (var f in eSet.Layers[0].Frames)
+                    for (int y = 8; y < 28; y++) for (int x = 10; x < 22; x++) f.Set(x, y, x == 10 || x == 21 || y == 8 || y == 27 ? outC : bodyC);
+                var ee = new Editor(new Settings());
+                ee.OpenTab(ef);
+                ee.EditPart(eSet, 0);
+                ee.BeginChange();
+                eSet.Layers[0].Frames[0].Set(15, 12, 0);                    // erase a pixel on Down 1
+                eSet.Layers[0].Frames[0].Set(16, 20, PixelImage.Rgb(250, 250, 0));   // and draw one
+                ee.Changed();
+                ee.CopyChange(true);
+                Func<int, bool> erasedOn = i => eSet.Layers[0].Frames[i].Get(15, 12) == 0;
+                Func<int, bool> drawnOn = i => eSet.Layers[0].Frames[i].Get(16, 20) == PixelImage.Rgb(250, 250, 0);
+                Check(erasedOn(1) && erasedOn(2) && erasedOn(3), "all directions: the erased pixel goes to the other Down poses");
+                Check(!Enumerable.Range(4, 12).Any(erasedOn), "all directions: ...but not to the Left, Right or Up frames");
+                Check(Enumerable.Range(1, 15).All(i => drawnOn(i) || (i >= 4 && i < 12)), "all directions: drawn pixels still go to every direction (left/right mirrored)");
+                ee.Undo();
+                // "Copy to this direction" (the frame strip's copy button on walking sprites)
+                ee.EditPart(eSet, 5);
+                ee.BeginChange(); eSet.Layers[0].Frames[5].Set(12, 10, 0); ee.Changed();
+                ee.CopyToAllFrames();
+                Check(new[] { 4, 6, 7 }.All(i => eSet.Layers[0].Frames[i].Get(12, 10) == 0) && new[] { 0, 1, 8, 12, 15 }.All(i => eSet.Layers[0].Frames[i].Get(12, 10) == bodyC),
+                      "copy button on walking sprites: only the poses facing the same way change");
+            }
+
             // ---- local check only: PSC_REF_PHOTO / PSC_REF_SPRITE / PSC_REF_SRC (x,y,w,h) / PSC_REF_DST / PSC_REF_DESC
             var refPhoto = Environment.GetEnvironmentVariable("PSC_REF_PHOTO");
             if (!string.IsNullOrEmpty(refPhoto))

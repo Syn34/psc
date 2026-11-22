@@ -73,6 +73,10 @@ namespace PokeSpriteCreator.UI
             if (E.Doc == null) return;
             bool ow = E.Doc.Kind == SpriteKind.Overworld;
             _mirrorLR.Visible = _mirrorRL.Visible = ow;
+            _copyAll.Text = ow ? "Copy to this direction" : "Copy to all frames";
+            _tip.SetToolTip(_copyAll, ow
+                ? "Copies what you changed on this frame (drawn, erased or recoloured since you picked it) to the other poses facing the same way, lined up with each pose."
+                : "Copies the selected paint layer's current frame to every frame");
             _add.Visible = _remove.Visible = E.Doc.Kind == SpriteKind.Back;
             _view.Invalidate();
             UpdatePreview();

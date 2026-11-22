@@ -102,8 +102,11 @@ picture used in `Graphics/Characters`. They're saved in the same `.psc` file as 
 
   The change is what you did to the frame since you picked it. A recolour (a colour changed everywhere it appears on the
   frame) is recoloured on the other frames too. Drawn or erased pixels are pasted where the area around them matches each
-  frame best, so they follow the walking bob, and are mirrored between left and right. Undo (Ctrl+Z) if a frame needs it
+  frame best, so they follow the walking bob, and are mirrored between left and right. Something you **erase** only goes
+  to the frames facing the same way (another direction shows a different side of the trainer). Undo (Ctrl+Z) if a frame needs it
   done by hand. Also in *Frames* (Ctrl+Shift+W / Ctrl+Shift+D).
+- Under the frames, the copy button becomes **Copy to this direction** for walking sprites: it copies your change to
+  the other poses facing the same way (it never copies a whole frame onto the other directions).
 - The Recolour tool changes only the frame you're on when editing walking sprites (Shift+click: every frame and layer).
 - **Remove…** gives two choices: **Clear to blank** (keeps an empty 4 × 4 sheet to draw on) or **Remove completely**
   (the sprite has no walking sprites, and the file is saved without them). Ctrl+Z brings them back either way.

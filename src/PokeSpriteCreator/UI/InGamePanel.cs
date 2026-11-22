@@ -72,7 +72,7 @@ namespace PokeSpriteCreator.UI
             };
             _tip.SetToolTip(_remove, "Clear the walking sprites to a blank sheet, or remove them completely. Ctrl+Z undoes either.");
             _tip.SetToolTip(_copySteps, "Copies what you changed on the selected frame (since you picked it) to the other frames facing the same way.");
-            _tip.SetToolTip(_copyAll, "Copies what you changed on the selected frame to every other frame. Recolours carry over exactly; drawn pixels are lined up with each frame (and mirrored between left and right).");
+            _tip.SetToolTip(_copyAll, "Copies what you changed on the selected frame to every other frame. Recolours carry over exactly; drawn pixels are lined up with each frame (and mirrored between left and right). Erased pixels only go to the frames facing the same way.");
             _set.Controls.AddRange(new Control[] { _walk, copyLbl, _copySteps, _copyAll, _copyInfo, _upload, _export, _remove });
 
             Controls.Add(_set);

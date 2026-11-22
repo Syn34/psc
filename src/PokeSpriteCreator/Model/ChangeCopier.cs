@@ -51,29 +51,39 @@ namespace PokeSpriteCreator.Model
         }
 
         public bool IsEmpty { get { return Recolors.Count == 0 && Pixels.Count == 0; } }
+        public int Erased { get { return Pixels.Count(p => p.Value == 0); } }
+        public int Drawn { get { return Pixels.Count(p => p.Value != 0); } }
 
         public string Describe()
         {
             var parts = new List<string>();
             if (Recolors.Count > 0) parts.Add(Recolors.Count + " colour" + (Recolors.Count == 1 ? "" : "s") + " changed");
-            if (Pixels.Count > 0) parts.Add(Pixels.Count + " pixel" + (Pixels.Count == 1 ? "" : "s") + " drawn or erased");
+            if (Drawn > 0) parts.Add(Drawn + " pixel" + (Drawn == 1 ? "" : "s") + " drawn");
+            if (Erased > 0) parts.Add(Erased + " pixel" + (Erased == 1 ? "" : "s") + " erased");
             return parts.Count == 0 ? "no change" : string.Join(", ", parts);
         }
 
         /// <summary>The target frame with the change copied onto it. mirror = the target faces the other way (left ↔ right).</summary>
-        public PixelImage ApplyTo(PixelImage target, bool mirror, out Point offset)
+        public PixelImage ApplyTo(PixelImage target, bool mirror, out Point offset) { return ApplyTo(target, mirror, true, out offset); }
+
+        /// <summary>As above; with withErased false, erased pixels aren't copied (a removal on one direction doesn't
+        /// line up with another direction's view of the trainer).</summary>
+        public PixelImage ApplyTo(PixelImage target, bool mirror, bool withErased, out Point offset)
         {
             var r = target.Clone();
             offset = Point.Empty;
             // recolours
             if (Recolors.Count > 0)
                 for (int i = 0; i < r.Px.Length; i++) { int m; if (r.Px[i] != 0 && Recolors.TryGetValue(r.Px[i], out m)) r.Px[i] = m; }
-            if (Pixels.Count == 0) return r;
+            var use = withErased ? Pixels : Pixels.Where(p => p.Value != 0).ToList();
+            if (use.Count == 0) return r;
 
             // drawn pixels: line them up where the area around them matches the target best
             var src = mirror ? Before.FlipH() : Before;
-            var pts = Pixels.Select(kv => new KeyValuePair<Point, int>(mirror ? new Point(Before.W - 1 - kv.Key.X, kv.Key.Y) : kv.Key, kv.Value)).ToList();
-            int x0 = pts.Min(p => p.Key.X) - 4, x1 = pts.Max(p => p.Key.X) + 4, y0 = pts.Min(p => p.Key.Y) - 4, y1 = pts.Max(p => p.Key.Y) + 4;
+            // line up using all changed pixels (erased ones too), then paste the ones being copied
+            var all = Pixels.Select(kv => mirror ? new Point(Before.W - 1 - kv.Key.X, kv.Key.Y) : kv.Key).ToList();
+            var pts = use.Select(kv => new KeyValuePair<Point, int>(mirror ? new Point(Before.W - 1 - kv.Key.X, kv.Key.Y) : kv.Key, kv.Value)).ToList();
+            int x0 = all.Min(p => p.X) - 4, x1 = all.Max(p => p.X) + 4, y0 = all.Min(p => p.Y) - 4, y1 = all.Max(p => p.Y) + 4;
             int best = int.MinValue, bdx = 0, bdy = 0;
             for (int dy = -4; dy <= 4; dy++)
                 for (int dx = -4; dx <= 4; dx++)

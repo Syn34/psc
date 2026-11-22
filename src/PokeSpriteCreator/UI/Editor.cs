@@ -267,13 +267,15 @@ namespace PokeSpriteCreator.UI
                 if (!allDirections && r != row) continue;
                 // left and right face opposite ways, so the change is mirrored between them
                 bool mirror = (row == 1 && r == 2) || (row == 2 && r == 1);
+                // something removed only goes to the poses facing the same way: other directions show a different side
                 Point off;
-                l.Frames[i] = ch.ApplyTo(l.Frames[i], mirror, out off);
+                l.Frames[i] = ch.ApplyTo(l.Frames[i], mirror, r == row, out off);
                 n++;
             }
             Changed();
             CaptureBaseline();
-            return "Copied " + ch.Describe() + " to " + n + " frame" + (n == 1 ? "" : "s") + (allDirections ? (ch.Pixels.Count > 0 ? " (lined up with each frame, mirrored between left and right)" : "") : " facing the same way") + ". Undo (Ctrl+Z) if it doesn't fit.";
+            string erasedNote = allDirections && ch.Erased > 0 ? " Erased pixels went only to the frames facing the same way." : "";
+            return "Copied " + ch.Describe() + " to " + n + " frame" + (n == 1 ? "" : "s") + (allDirections ? (ch.Drawn > 0 ? " (lined up with each frame, mirrored between left and right)" : "") : " facing the same way") + "." + erasedNote + " Undo (Ctrl+Z) if it doesn't fit.";
         }
 
         // ------------------------------------------------------------------ change notifications
@@ -614,6 +616,13 @@ namespace PokeSpriteCreator.UI
         {
             var l = Current;
             if (l == null) { Say("Select a layer to copy its frame to the others."); return; }
+            if (Doc.Kind == SpriteKind.Overworld)
+            {
+                // walking sprites: copy what changed on this frame to the other poses facing the same way
+                // (copying the whole frame to every direction would put a front view on the side and back frames)
+                Say(CopyChange(false));
+                return;
+            }
             BeginChange();
             for (int i = 0; i < Doc.FrameCount; i++) if (i != Frame) l.Frames[i] = l.Frames[Frame].Clone();
             Changed();

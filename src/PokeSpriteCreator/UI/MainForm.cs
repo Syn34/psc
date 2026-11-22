@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.6.1";
+        public const string Version = "0.6.2";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;
@@ -198,7 +198,7 @@ namespace PokeSpriteCreator.UI
             _framesMenu.DropDownItems.Add(new ToolStripSeparator());
             _framesMenu.DropDownItems.Add(Item("Copy my change to its &walking steps", Keys.Control | Keys.Shift | Keys.W, () => E.Say(E.CopyChange(false))));
             _framesMenu.DropDownItems.Add(Item("Copy my change to all &directions", Keys.Control | Keys.Shift | Keys.D, () => E.Say(E.CopyChange(true))));
-            _framesMenu.DropDownItems.Add(Item("Copy frame to &all frames", Keys.None, () => E.CopyToAllFrames()));
+            _framesMenu.DropDownItems.Add(Item("Copy frame to &all frames (walking sprites: to this direction)", Keys.None, () => E.CopyToAllFrames()));
             _framesMenu.DropDownItems.Add(Item("Mirror &Left → Right (overworld)", Keys.None, () => E.MirrorRows(true)));
             _framesMenu.DropDownItems.Add(Item("Mirror &Right → Left (overworld)", Keys.None, () => E.MirrorRows(false)));
             _framesMenu.DropDownItems.Add(new ToolStripSeparator());
@@ -298,8 +298,10 @@ namespace PokeSpriteCreator.UI
        All directions    - to every other frame
      Recolours carry over exactly. Drawn or erased pixels are lined up with
      each frame (following the walking bob) and mirrored between left and
-     right. The change is what you did since you picked the frame. Undo
-     (Ctrl+Z) if it doesn't fit.
+     right. Erased pixels only go to the frames facing the same way. The
+     change is what you did since you picked the frame. Undo (Ctrl+Z) if it
+     doesn't fit. The ""Copy to this direction"" button under the frames does
+     the same as ""Its walking steps"".
    * Export sheet saves it (trainer_NAME.png for Graphics/Characters).
    * Remove... clears them to a blank sheet, or removes them completely (the
      sprite then has none). Ctrl+Z brings them back either way.
