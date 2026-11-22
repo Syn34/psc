@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.6.0";
+        public const string Version = "0.6.1";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;
@@ -301,6 +301,8 @@ namespace PokeSpriteCreator.UI
      right. The change is what you did since you picked the frame. Undo
      (Ctrl+Z) if it doesn't fit.
    * Export sheet saves it (trainer_NAME.png for Graphics/Characters).
+   * Remove... clears them to a blank sheet, or removes them completely (the
+     sprite then has none). Ctrl+Z brings them back either way.
    An overworld sheet opened on its own works the same way.
 
 4. TABS AND COMPARING

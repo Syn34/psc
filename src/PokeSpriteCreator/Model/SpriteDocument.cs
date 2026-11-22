@@ -28,6 +28,8 @@ namespace PokeSpriteCreator.Model
         public List<Layer> Layers;
         public FrameLayout Layout;
         public int Selected;
+        public bool WalkStep;            // this step also puts back (or takes away) the walking sprites
+        public SpriteDocument Walk;
     }
 
     /// <summary>The sprite being edited: style, kind, frame layout and a stack of layers (bottom first).</summary>

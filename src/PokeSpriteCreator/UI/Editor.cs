@@ -190,6 +190,39 @@ namespace PokeSpriteCreator.UI
 
         public void NotifySaved() { if (Saved != null) Saved(); if (TabsChanged != null) TabsChanged(); }
 
+        /// <summary>Takes the walking sprites away from this front sprite completely (Ctrl+Z puts them back).</summary>
+        public void RemoveWalkingSprites()
+        {
+            var r = Root;
+            if (r == null || r.Kind != SpriteKind.Front || r.Overworld == null) return;
+            var set = r.Overworld;
+            if (Doc != r) EditPart(r);
+            BeginChange();
+            var step = _undo[_undo.Count - 1];
+            step.WalkStep = true; step.Walk = set;
+            r.Overworld = null;
+            Changed();
+            PartsChanged();
+            Say("Walking sprites removed: this sprite has none now. Ctrl+Z brings them back.");
+        }
+
+        /// <summary>Empties the walking sprites to a blank sheet of the same size (Ctrl+Z brings them back).</summary>
+        public void ClearWalkingSprites()
+        {
+            var r = Root;
+            if (r == null) return;
+            var set = r.Kind == SpriteKind.Overworld ? r : r.Overworld;
+            if (set == null) return;
+            if (Doc != set) EditPart(set, 0);
+            BeginChange();
+            set.Layers.Clear();
+            set.Layers.Add(set.NewLayer("Walking sprites"));
+            LayerIndex = 0;
+            LayersEdited();
+            CaptureBaseline();
+            Say("Walking sprites cleared to a blank sheet. Ctrl+Z brings them back.");
+        }
+
         /// <summary>The walking sprites were added or replaced (tells the panels).</summary>
         public void PartsChanged() { if (PartSwitched != null) PartSwitched(); }
 
@@ -285,10 +318,19 @@ namespace PokeSpriteCreator.UI
         void Step(List<DocState> from, List<DocState> to, string what)
         {
             if (Doc == null || from.Count == 0) { Say("Nothing to " + what.ToLowerInvariant() + "."); return; }
-            to.Add(Doc.Capture(LayerIndex));
             var s = from[from.Count - 1];
+            var now = Doc.Capture(LayerIndex);
+            if (s.WalkStep) { now.WalkStep = true; now.Walk = Doc.Overworld; }
+            to.Add(now);
             from.RemoveAt(from.Count - 1);
             Doc.Restore(s);
+            if (s.WalkStep)
+            {
+                Doc.Overworld = s.Walk;
+                if (s.Walk != null) s.Walk.Parent = Doc;
+                Doc.Dirty = true;
+                PartsChanged();
+            }
             LayerIndex = Math.Min(s.Selected, Doc.Layers.Count - 1);
             if (Frame >= Doc.FrameCount) Frame = Doc.FrameCount - 1;
             _lastKey = null;

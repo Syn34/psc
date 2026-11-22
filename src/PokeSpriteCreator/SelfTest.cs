@@ -524,6 +524,39 @@ namespace PokeSpriteCreator
                 Check(back2.References.Count == 1 && back2.References[0].Name == "curls" && back2.References[0].Image.W == 120 && back2.Layers.Count == spr.Layers.Count, "picture: the reference picture is saved with the sprite, separate from its layers");
             }
 
+            // ---- walking sprites: clear to blank, or remove completely (both undoable)
+            {
+                var wf = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+                wf.Layers.Add(wf.NewLayer("Picture"));
+                wf.Layers[0].Frames[0].Set(40, 40, PixelImage.Rgb(10, 20, 30));
+                var walkSet = wf.MakeOverworld(null, null);
+                foreach (var f in walkSet.Layers[0].Frames) f.Set(5, 5, PixelImage.Rgb(200, 0, 0));
+                var ew = new Editor(new Settings());
+                ew.OpenTab(wf);
+                ew.EditPart(walkSet, 3);
+                ew.ClearWalkingSprites();
+                Check(wf.Overworld == walkSet && walkSet.Layers.Count == 1 && walkSet.Layers[0].Frames.All(f => f.Px.All(c => c == 0)) && walkSet.FrameCount == 16,
+                      "walking sprites: Clear to blank leaves an empty 4 x 4 sheet");
+                ew.Undo();
+                Check(walkSet.Layers[0].Frames.All(f => f.Get(5, 5) == PixelImage.Rgb(200, 0, 0)), "walking sprites: Undo brings the cleared frames back");
+                ew.RemoveWalkingSprites();
+                Check(wf.Overworld == null && ew.Doc == wf && wf.AnyDirty, "walking sprites: Remove completely takes them away (and goes back to the main sprite)");
+                var noWalk = Path.Combine(dir, "no_walk.psc");
+                wf.Save(noWalk);
+                Check(SpriteDocument.Load(noWalk).Overworld == null, "walking sprites: saved without them");
+                ew.Undo();
+                Check(wf.Overworld == walkSet && walkSet.Parent == wf && wf.Layers[0].Frames[0].Get(40, 40) == PixelImage.Rgb(10, 20, 30), "walking sprites: Undo puts them back");
+                ew.Redo();
+                Check(wf.Overworld == null, "walking sprites: Redo removes them again");
+                ew.Undo();
+                ew.EditPart(walkSet, 0);
+                ew.EditPart(wf, 0);
+                wf.Layers[0].Frames[0].Set(1, 1, PixelImage.Rgb(1, 1, 1));
+                ew.BeginChange(); wf.Layers[0].Frames[0].Set(2, 2, PixelImage.Rgb(2, 2, 2)); ew.Changed();
+                ew.Undo();
+                Check(wf.Overworld == walkSet, "walking sprites: an ordinary Undo on the main sprite doesn't touch them");
+            }
+
             // ---- local check only: PSC_REF_PHOTO / PSC_REF_SPRITE / PSC_REF_SRC (x,y,w,h) / PSC_REF_DST / PSC_REF_DESC
             var refPhoto = Environment.GetEnvironmentVariable("PSC_REF_PHOTO");
             if (!string.IsNullOrEmpty(refPhoto))

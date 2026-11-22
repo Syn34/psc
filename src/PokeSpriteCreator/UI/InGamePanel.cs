@@ -21,7 +21,7 @@ namespace PokeSpriteCreator.UI
         readonly Panel _empty, _set, _modeBar;
         readonly CheckBox _mainBtn, _setBtn;
         readonly WalkView _walk;
-        readonly Button _copySteps, _copyAll, _upload, _export;
+        readonly Button _copySteps, _copyAll, _upload, _export, _remove;
         readonly Timer _timer;
         readonly ToolTip _tip = new ToolTip();
         bool _syncing;
@@ -58,11 +58,22 @@ namespace PokeSpriteCreator.UI
             _copySteps = new Button { Text = "Its walking steps", Left = 0, Top = 446, Width = 146, Height = 28 };
             _copyAll = new Button { Text = "All directions", Left = 152, Top = 446, Width = 146, Height = 28 };
             _copyInfo = new Label { Left = 0, Top = 478, Width = 300, Height = 44, Tag = "sub", Font = Theme.Small };
-            _upload = new Button { Text = "Replace sheet…", Left = 0, Top = 526, Width = 146, Height = 28 };
-            _export = new Button { Text = "Export sheet…", Left = 152, Top = 526, Width = 146, Height = 28 };
+            _upload = new Button { Text = "Replace sheet…", Left = 0, Top = 526, Width = 106, Height = 28 };
+            _export = new Button { Text = "Export sheet…", Left = 110, Top = 526, Width = 100, Height = 28 };
+            _remove = new Button { Text = "Remove…", Left = 214, Top = 526, Width = 84, Height = 28 };
+            var removeMenu = new ContextMenuStrip();
+            var clearItem = removeMenu.Items.Add("Clear to blank (keep an empty sheet to draw on)", null, (s2, a2) => E.ClearWalkingSprites());
+            var removeItem = removeMenu.Items.Add("Remove completely (no walking sprites)", null, (s2, a2) => E.RemoveWalkingSprites());
+            _remove.Click += (s2, a2) =>
+            {
+                var root = E.Root;
+                removeItem.Visible = root != null && root.Kind == SpriteKind.Front;   // an overworld sheet on its own can only be cleared
+                removeMenu.Show(_remove, new Point(0, _remove.Height));
+            };
+            _tip.SetToolTip(_remove, "Clear the walking sprites to a blank sheet, or remove them completely. Ctrl+Z undoes either.");
             _tip.SetToolTip(_copySteps, "Copies what you changed on the selected frame (since you picked it) to the other frames facing the same way.");
             _tip.SetToolTip(_copyAll, "Copies what you changed on the selected frame to every other frame. Recolours carry over exactly; drawn pixels are lined up with each frame (and mirrored between left and right).");
-            _set.Controls.AddRange(new Control[] { _walk, copyLbl, _copySteps, _copyAll, _copyInfo, _upload, _export });
+            _set.Controls.AddRange(new Control[] { _walk, copyLbl, _copySteps, _copyAll, _copyInfo, _upload, _export, _remove });
 
             Controls.Add(_set);
             Controls.Add(_empty);

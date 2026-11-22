@@ -105,6 +105,8 @@ picture used in `Graphics/Characters`. They're saved in the same `.psc` file as 
   frame best, so they follow the walking bob, and are mirrored between left and right. Undo (Ctrl+Z) if a frame needs it
   done by hand. Also in *Frames* (Ctrl+Shift+W / Ctrl+Shift+D).
 - The Recolour tool changes only the frame you're on when editing walking sprites (Shift+click: every frame and layer).
+- **Remove…** gives two choices: **Clear to blank** (keeps an empty 4 × 4 sheet to draw on) or **Remove completely**
+  (the sprite has no walking sprites, and the file is saved without them). Ctrl+Z brings them back either way.
 - **Export sheet…** saves the sheet (`trainer_NAME.png`) at 1×–4×, to a file or into a game folder.
 - An overworld sheet opened on its own works the same way.
 
