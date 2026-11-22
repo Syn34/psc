@@ -167,7 +167,18 @@ namespace PokeSpriteCreator
                 both.Refresh();
                 var hairPart = both.Find(5, SpriteKind.Front, null, "Hair", "Nate");
                 Check(hairPart != null && !hairPart.BuiltIn && both.Parts(5, SpriteKind.Front, null, "Hair").Count(x => x.Name == "Nate") == 1, "user part replaces built-in");
-                Check(both.CountBuiltIn() == 9, "9 built-in parts, got " + both.CountBuiltIn());
+                Check(both.CountBuiltIn() == 16, "16 built-in parts, got " + both.CountBuiltIn());
+                // Ace Trainer M: every piece is a full 80x80 frame and together they make the 15-colour sprite
+                var ad = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+                var ae = new Editor(new Settings()) { Lib = both };
+                ae.SetDocument(ad);
+                foreach (var cat in new[] { "Poses", "Shoes", "Bottoms", "Tops", "Hair", "Accessories" })
+                {
+                    var p = both.Parts(5, SpriteKind.Front, null, cat).FirstOrDefault(x => x.Name.StartsWith("Ace Trainer M") && !x.Name.EndsWith("line art"));
+                    Check(p != null && p.BuiltIn && !p.FramesFor(ad.Layout).Loose, "built-in Ace Trainer M part in " + cat);
+                    if (p != null) ae.SetPart(p, false);
+                }
+                Check(ad.Composite(0).Colors().Count == 15, "Ace Trainer M rebuilt with 15 colours, got " + ad.Composite(0).Colors().Count);
             }
 
             // ---- shapes

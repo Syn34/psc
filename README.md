@@ -35,7 +35,14 @@ The app comes with a `Built-in parts` folder next to the exe (from `builtin-part
 It has the same layout as your own parts folder and is always listed alongside it.
 
 - **Gen 5 trainer front (80×80)**: Nate, cut into Poses (`Nate`, `Nate line art`), Hair, Visors, Tops, Backpacks (`Nate bag`),
-  Accessories (`Nate wristband`), Bottoms and Shoes. Wearing every piece rebuilds the original sprite exactly.
+  Accessories (`Nate wristband`), Bottoms and Shoes.
+- **Gen 5 trainer front (80×80)**: Ace Trainer M, cut into Poses (`Ace Trainer M`, `Ace Trainer M line art`), Hair, Tops
+  (jacket and orange shirt), Bottoms (trousers and belt), Shoes (boots) and Accessories (`Ace Trainer M Poke Balls`:
+  the ball in his hand and the one on his belt).
+
+Wearing every piece of one trainer rebuilds the original sprite exactly. Pieces fit the trainer they were cut from:
+the two trainers stand differently, so a piece moved onto the other trainer needs nudging into place (Move tool or the
+X / Y boxes), and clothes may leave gaps.
 
 A part of your own with the same category and name replaces the built-in one.
 
