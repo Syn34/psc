@@ -32,6 +32,24 @@ exports the sprite the way the games would. Going over the limit never changes t
 exported) as the closest colour you already have, and the status bar says which. The colour picker always picks the real
 colour. Light and dark mode.
 
+## Shading helper
+
+The shaded-ball button in the toolbar (H). Drag a box over one part of the sprite (a leg, an arm, a sleeve), or just click
+it, and the right-hand panel suggests shading for it the way a pixel artist would fix it:
+
+- **Light from one side**, worked out from how the rest of the sprite is shaded (or pick Left / Top left / Top /
+  Top right / Right).
+- **An outline** where the part meets the background (around it, or on its edge pixels; optionally a softer outline on
+  the lit side, as Gen 5 sprites often do).
+- **The shadow tone** down the side away from the light, **a thin highlight** one pixel in from the lit edge, and **a
+  darker row** under anything that overlaps the part from above (like a leg under shorts).
+- It uses the part's own shades from your sprite, so it adds no colours (untick *Only colours already in the sprite* to
+  let it make a missing darker or lighter shade).
+
+The panel shows the part now and suggested, the colours used (outline, under, shadow, base, highlight) and a list of
+what it changes and why (no outline, shaded on both sides, highlight too wide, too many shades…). The suggestion is also
+drawn on the canvas. **Apply** (Enter) puts it on the selected layer; Ctrl+Z takes it off; Esc clears the box.
+
 ## Walking sprites (In-game sprites panel)
 
 A trainer front sprite's walking sprites are a 4 × 4 sheet (rows Down, Left, Right, Up; the walking steps across), the
@@ -91,11 +109,12 @@ layers become paint layers.
 The source is C# 5 for .NET Framework 4.8 with WinForms, no NuGet packages.
 
 `PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and walking sheet and checks picture import, editing,
-colour limits, saving (with walking sprites), exporting, copying changes between frames, tabs, comparing and scrolling.
+colour limits, saving (with walking sprites), exporting, copying changes between frames, tabs, comparing and scrolling, the colour limit, and the shading helper (on a leg like the one
+in Mike's screenshot).
 
 ## Keyboard shortcuts
 
-B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour ·
+B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour · H shading helper ·
 X swap colours · S mirror · Alt+click pick colour · Shift = filled shape / straight line ·
 arrows nudge the layer · wheel / Shift+wheel scroll · Ctrl+wheel zoom · middle-drag pan · Ctrl+Tab next tab · Ctrl+W close tab · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
 Ctrl+I import picture · Ctrl+S save · Ctrl+E export · Ctrl+Shift+W / Ctrl+Shift+D copy my change to its walking steps / all directions

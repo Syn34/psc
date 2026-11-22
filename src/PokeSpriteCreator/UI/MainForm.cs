@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;
@@ -22,6 +22,7 @@ namespace PokeSpriteCreator.UI
         bool _linkZoom = true, _zoomSyncing;
         ToolStripMenuItem _compareMenu, _stopCompareItem, _linkZoomItem;
         readonly InGamePanel _dirs;
+        readonly ShadePanel _shade;
         readonly LayersPanel _layers;
         readonly ColorPanel _colors;
         readonly FrameStrip _frames;
@@ -65,6 +66,7 @@ namespace PokeSpriteCreator.UI
             center.Controls.Add(_tabBar);
 
             _dirs = new InGamePanel(E) { Dock = DockStyle.Right, Width = 322 };
+            _shade = new ShadePanel(E) { Dock = DockStyle.Right, Width = 322, Visible = false };
             var left = new Panel { Dock = DockStyle.Left, Width = 318, Tag = "panel" };
             _layers = new LayersPanel(E) { Dock = DockStyle.Fill };
             _colors = new ColorPanel(E) { Dock = DockStyle.Bottom };
@@ -86,6 +88,7 @@ namespace PokeSpriteCreator.UI
             Controls.Add(center);
             Controls.Add(splitR);
             Controls.Add(_dirs);
+            Controls.Add(_shade);
             Controls.Add(splitL);
             Controls.Add(left);
             Controls.Add(_tools);
@@ -97,6 +100,12 @@ namespace PokeSpriteCreator.UI
             E.DocChanged += UpdateTitle;
             E.LayersChanged += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; UpdateMenus(); };
             E.ToolChanged += SyncToolButtons;
+            E.ToolChanged += () =>
+            {
+                // the shading helper's panel takes the right-hand side while it's the tool
+                bool shade = E.Tool == Tool.Shade;
+                if (_shade.Visible != shade) { _shade.Visible = shade; _dirs.Visible = !shade; }
+            };
             E.PartSwitched += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; _zoomLbl.Text = ActiveCanvas.Zoom * 100 + "%"; };
             E.TabsChanged += () => { UpdateTitle(); UpdateMenus(); };
             E.CompareChanged += ShowCompare;
@@ -240,6 +249,15 @@ namespace PokeSpriteCreator.UI
    Pencil, eraser, fill, colour picker, line, rectangle, ellipse, move,
    recolour and mirror drawing, on as many layers as you like.
    ""Limit to 15 colours"" shows the sprite the way the games would.
+   SHADING HELPER (H, the shaded-ball button): drag a box over one part (a leg,
+   an arm, a sleeve) or just click it. The panel on the right shows it now and
+   with suggested shading, the colours used and what it changes and why:
+   light from one side (worked out from the rest of the sprite), an outline
+   where it meets the background, the shadow tone on the side away from the
+   light, a thin highlight one pixel in from the lit edge, and a darker row
+   under anything overlapping it from above. It uses your own colours.
+   Change the light, outline and options to taste; Apply (Enter) puts it on the
+   selected layer, Ctrl+Z takes it off, Esc clears the box.
 
 3. WALKING SPRITES (IN-GAME SPRITES PANEL, ON THE RIGHT)
    A trainer front sprite keeps its walking sprites in the same file: a 4 x 4
@@ -280,6 +298,7 @@ namespace PokeSpriteCreator.UI
   I  Colour picker     L  Line             R  Rectangle
   O  Ellipse           M  Move             C  Recolour
   X  Swap colours      S  Mirror drawing on/off
+  H  Shading helper (drag a box or click a part; Enter = apply, Esc = clear)
 
 DRAWING
   Left mouse = left colour, right mouse = right colour
@@ -350,6 +369,7 @@ FILE
             AddTool(t, Tool.Ellipse, "Ellipse", "O");
             AddTool(t, Tool.Move, "Move", "M");
             AddTool(t, Tool.Recolor, "Recolor", "C");
+            AddTool(t, Tool.Shade, "Shade", "H");
             t.Items.Add(new ToolStripSeparator());
             _mirrorBtn = new ToolStripButton("Mirror") { CheckOnClick = true, Image = Icons.Get("Mirror"), DisplayStyle = ToolStripItemDisplayStyle.ImageAndText, ToolTipText = "Mirror drawing left/right (S)" };
             _mirrorBtn.CheckedChanged += (s, a) => { E.Mirror = _mirrorBtn.Checked; InvalidateCanvases(); };
@@ -384,12 +404,14 @@ FILE
             { Tool.Rectangle, "Rectangle: drag to draw (Shift = filled)." },
             { Tool.Ellipse, "Ellipse: drag to draw (Shift = filled)." },
             { Tool.Move, "Move: drag the selected layer's pixels (Alt: this frame only). Arrow keys nudge 1 pixel." },
+            { Tool.Shade, "Shading helper: drag a box over one part of the sprite (or click it) to get shading suggested on the right. Apply puts it on the layer." },
             { Tool.Recolor, "Recolour: click a colour to change it to your left colour on the selected layer. Shift+click changes it on every layer." },
         };
 
         void AddTool(ToolStrip t, Tool tool, string name, string key)
         {
-            var b = new ToolStripButton(tool == Tool.Recolor ? "Recolour" : name) { Image = Icons.Get(name), DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = (tool == Tool.Recolor ? "Recolour" : name) + " (" + key + ")" };
+            string label = tool == Tool.Recolor ? "Recolour" : tool == Tool.Shade ? "Shading helper" : name;
+            var b = new ToolStripButton(label) { Image = Icons.Get(name), DisplayStyle = ToolStripItemDisplayStyle.Image, ToolTipText = label + " (" + key + ")", Tag = name };
             b.Click += (s, e) => E.SetTool(tool);
             _toolButtons[tool] = b;
             t.Items.Add(b);
@@ -440,9 +462,9 @@ FILE
         {
             BackColor = Theme.Panel;
             Theme.Apply(this);
-            foreach (var kv in _toolButtons) kv.Value.Image = Icons.Get(kv.Value.Text == "Recolour" ? "Recolor" : kv.Value.Text);
+            foreach (var kv in _toolButtons) kv.Value.Image = Icons.Get((string)kv.Value.Tag);
             if (_mirrorBtn != null) _mirrorBtn.Image = Icons.Get("Mirror");
-            _dirs.ApplyTheme(); _layers.ApplyTheme(); _colors.ApplyTheme();
+            _dirs.ApplyTheme(); _shade.ApplyTheme(); _layers.ApplyTheme(); _colors.ApplyTheme();
             InvalidateCanvases(); _frames.Invalidate(true);
             UpdateMenus();
         }
@@ -468,6 +490,9 @@ FILE
                     case Keys.O: E.SetTool(Tool.Ellipse); return true;
                     case Keys.M: case Keys.V: E.SetTool(Tool.Move); return true;
                     case Keys.C: E.SetTool(Tool.Recolor); return true;
+                    case Keys.H: E.SetTool(Tool.Shade); return true;
+                    case Keys.Enter: if (E.Tool == Tool.Shade && E.Shade != null && E.Shade.HasChanges) { E.ApplyShade(); return true; } break;
+                    case Keys.Escape: if (E.Tool == Tool.Shade && E.ShadeArea.HasValue) { E.SetShadeArea(null); return true; } break;
                     case Keys.X: E.SwapColors(); return true;
                     case Keys.S: _mirrorBtn.Checked = !_mirrorBtn.Checked; return true;
                 }

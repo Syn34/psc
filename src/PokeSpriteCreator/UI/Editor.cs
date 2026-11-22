@@ -6,7 +6,7 @@ using PokeSpriteCreator.Model;
 
 namespace PokeSpriteCreator.UI
 {
-    public enum Tool { Pencil, Eraser, Fill, Picker, Line, Rectangle, Ellipse, Move, Recolor }
+    public enum Tool { Pencil, Eraser, Fill, Picker, Line, Rectangle, Ellipse, Move, Recolor, Shade }
 
     /// <summary>
     /// The editing session shared by all panels: the document, the selected layer and frame,
@@ -333,6 +333,44 @@ namespace PokeSpriteCreator.UI
         }
 
         public void SetTool(Tool t) { Tool = t; if (ToolChanged != null) ToolChanged(); }
+
+        // ------------------------------------------------------------------ shading helper
+
+        /// <summary>The box picked with the shading helper (on the current frame), and its suggestion.</summary>
+        public Rectangle? ShadeArea;
+        public ShadeSuggestion Shade;
+        public readonly ShadeOptions ShadeOptions = new ShadeOptions();
+        public bool ShadePreview = true;
+        public event Action ShadeChanged;
+
+        public void SetShadeArea(Rectangle? area)
+        {
+            ShadeArea = area;
+            RecomputeShade();
+        }
+
+        public void RecomputeShade()
+        {
+            Shade = null;
+            if (ShadeArea.HasValue && Doc != null && Frame < Doc.FrameCount)
+            {
+                var layer = Current;
+                if (layer == null) { ShadeArea = null; Say("Select a layer to shade."); }
+                else Shade = ShadingHelper.Suggest(layer.Frames[Frame], Doc.Composite(Frame), ShadeArea.Value, Doc.UsedColors(), ShadeOptions);
+            }
+            if (ShadeChanged != null) ShadeChanged();
+        }
+
+        public void ApplyShade()
+        {
+            if (Shade == null || !Shade.HasChanges || Current == null) return;
+            BeginChange();
+            Current.Frames[Frame] = Shade.After.Clone();
+            int n = Shade.Changed;
+            Changed();
+            RecomputeShade();
+            Say("Shading applied (" + n + " pixels). Ctrl+Z to undo.");
+        }
 
         public void SetPrimary(int c) { Primary = c; if (ColorsChanged != null) ColorsChanged(); }
         public void SetSecondary(int c) { Secondary = c; if (ColorsChanged != null) ColorsChanged(); }

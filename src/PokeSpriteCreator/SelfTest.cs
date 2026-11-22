@@ -225,6 +225,75 @@ namespace PokeSpriteCreator
                 Check(nate.LastMerged.Count == 0, "removing a colour frees its place for the new one");
             }
 
+            // ---- shading helper, on the leg from Mike's screenshot (no outline, light stripe down the middle)
+            {
+                string[] legRows = {
+                    "..............ABBCBACDBABAB",
+                    "..............ABBCBACDBABAB",
+                    ".............ACBBBACCDBABAB",
+                    ".............ACCBBBCCCABABB",
+                    ".............ACCCCCCCCABBBB",
+                    "............ACAACCCCCCDBBBB",
+                    "............ACCCAAAAAADCCBB",
+                    "............ACCCCCCCCCDBBCC",
+                    ".............ACCCCCCCCCABBB",
+                    "..............AACCCCCCDDBBB",
+                    "..............EFAAAADD..DAB",
+                    "..............EFFFE.......A",
+                    "..............GGHHG........",
+                    "..............GHHHG........",
+                    "..............GHHGG........",
+                    ".............GGHHG.........",
+                    ".............GHHGG.........",
+                    ".............GHHG..........",
+                    ".............GHHG..........",
+                    ".............GHHG..........",
+                    ".........AA.IIIHG..........",
+                    "........ABBAJJJJJ..........",
+                    ".........KAACBALKI.........",
+                    "........KCCJJALLKI.........",
+                    ".......KLJJLLKLKII.........",
+                    ".......KJJJKLLII...........",
+                    "........IIIIII............."
+                };
+                var legPal = new Dictionary<char, int> {
+                    { 'A', 0x5A5A6B }, { 'B', 0xCECEDE }, { 'C', 0x94949C }, { 'D', 0x212942 }, { 'E', 0xAD8473 }, { 'F', 0xDEA57B },
+                    { 'G', 0xF0C098 }, { 'H', 0xFFD6BD }, { 'I', 0x000000 }, { 'J', 0x292929 }, { 'K', 0x634A42 }, { 'L', 0xCE5252 } };
+                var leg = new PixelImage(legRows[0].Length, legRows.Length);
+                for (int y = 0; y < legRows.Length; y++)
+                    for (int x = 0; x < legRows[y].Length; x++)
+                        if (legRows[y][x] != '.') { int v = legPal[legRows[y][x]]; leg.Set(x, y, PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255)); }
+                Func<int, int> rgb = v => PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+                var legColors = new HashSet<int>(leg.Px.Where(c => c != 0));
+                var sug = ShadingHelper.Suggest(leg, leg, new Rectangle(12, 10, 7, 11), legColors, new ShadeOptions { Light = LightFrom.Right });
+                leg.Scale(8).Save(Path.Combine(dir, "shade_before.png"));
+                sug.After.Scale(8).Save(Path.Combine(dir, "shade_after.png"));
+                File.WriteAllText(Path.Combine(dir, "shade_notes.txt"), string.Join("\r\n", sug.Notes.ToArray()));
+                Check(sug.Ramp.Outline == rgb(0x634A42) && sug.Ramp.Shadow == rgb(0xDEA57B) && sug.Ramp.Base == rgb(0xF0C098) && sug.Ramp.Highlight == rgb(0xFFD6BD) && sug.Ramp.Under == rgb(0xAD8473),
+                      "shading: picks the skin ramp from the sprite (outline " + PixelImage.Hex(sug.Ramp.Outline) + ", shadow " + PixelImage.Hex(sug.Ramp.Shadow) + ", base " + PixelImage.Hex(sug.Ramp.Base) + ", highlight " + PixelImage.Hex(sug.Ramp.Highlight) + ")");
+                Check(sug.Ramp.New.Count == 0 && sug.After.Colors().IsSubsetOf(legColors), "shading adds no new colours");
+                Check(sug.After.Get(12, 15) == rgb(0x634A42) && sug.After.Get(13, 15) == rgb(0xDEA57B), "outline added outside on the left, shadow just inside it");
+                Check(sug.After.Get(19, 13) == rgb(0x634A42), "outline on the right where it meets the background");
+                bool hiInside = false;
+                for (int x = 13; x < 18; x++) if (sug.After.Get(x, 16) == rgb(0xFFD6BD)) hiInside = true;
+                Check(hiInside && sug.After.Get(16, 16) != rgb(0xDEA57B), "a highlight toward the lit (right) side");
+                Check(sug.After.Get(14, 10) == rgb(0xAD8473) || sug.After.Get(15, 10) == rgb(0xAD8473), "darker row under the shorts");
+                bool untouched = true;
+                for (int y = 0; y < 10; y++) for (int x = 0; x < leg.W; x++) if (sug.After.Get(x, y) != leg.Get(x, y)) untouched = false;
+                for (int y = 21; y < leg.H; y++) for (int x = 0; x < leg.W; x++) if (sug.After.Get(x, y) != leg.Get(x, y)) untouched = false;
+                Check(untouched, "the shorts and shoe are left alone");
+                Check(sug.Notes.Any(n => n.Contains("No outline")) && sug.Notes.Any(n => n.Contains("both sides") || n.Contains("lit side")), "explains: no outline, shaded on both sides");
+                var again = ShadingHelper.Suggest(sug.After, sug.After, sug.Region, legColors, new ShadeOptions { Light = LightFrom.Right });
+                Check(again.Changed <= 2, "running it again on its own result changes (almost) nothing (" + again.Changed + ")");
+                Check(!again.Notes.Any(n => n.Contains("both sides") || n.Contains("No outline")), "and doesn't complain about its own result: " + string.Join(" | ", again.Notes.ToArray()));
+                var clickArea = ShadingHelper.AreaAround(leg, new Point(15, 16));
+                Check(clickArea.Contains(14, 12) && clickArea.Contains(13, 19) && !clickArea.Contains(20, 5), "clicking the leg boxes the leg " + clickArea);
+                // light from the right is worked out from a sprite lit from the right
+                var ball = new PixelImage(20, 20);
+                for (int y = 2; y < 18; y++) for (int x = 2; x < 18; x++) ball.Set(x, y, x < 10 ? rgb(0x806040) : rgb(0xE0C090));
+                Check(ShadingHelper.GuessLight(ball) == LightFrom.Right, "guesses light from the right");
+            }
+
             // ---- tabs and comparing
             var et = new Editor(new Settings());
             var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));

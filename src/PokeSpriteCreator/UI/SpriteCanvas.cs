@@ -19,6 +19,7 @@ namespace PokeSpriteCreator.UI
         bool _down, _panning, _space;
         MouseButtons _btn;
         Point _start, _last, _panFrom, _panStart;
+        Rectangle? _shadeDrag;   // the box being dragged with the shading helper
         PixelImage _shapeBase;
         List<PixelImage> _moveBase;
         Layer _target;
@@ -38,7 +39,8 @@ namespace PokeSpriteCreator.UI
             E.DocChanged += Invalidate;
             E.FrameChanged += Invalidate;
             E.SelectionChanged += Invalidate;
-            E.ToolChanged += UpdateCursor;
+            E.ToolChanged += () => { UpdateCursor(); Invalidate(); };
+            E.ShadeChanged += Invalidate;
             E.PartSwitched += () =>
             {
                 if (S != null && S.NeedsFit && Width > 40 && Height > 40) FitToWindow();
@@ -147,6 +149,13 @@ namespace PokeSpriteCreator.UI
             return new Point((int)Math.Floor((m.X - o.X) / (double)Zoom), (int)Math.Floor((m.Y - o.Y) / (double)Zoom));
         }
 
+        Rectangle Box(Point a, Point b)
+        {
+            int x0 = Math.Max(0, Math.Min(a.X, b.X)), y0 = Math.Max(0, Math.Min(a.Y, b.Y));
+            int x1 = Math.Min(D.Layout.FrameW - 1, Math.Max(a.X, b.X)), y1 = Math.Min(D.Layout.FrameH - 1, Math.Max(a.Y, b.Y));
+            return Rectangle.FromLTRB(x0, y0, Math.Max(x0, x1) + 1, Math.Max(y0, y1) + 1);
+        }
+
         void UpdateCursor()
         {
             switch (E.Tool)
@@ -190,6 +199,20 @@ namespace PokeSpriteCreator.UI
                 }
             }
             using (var p = new Pen(Theme.Border)) g.DrawRectangle(p, r.X - 1, r.Y - 1, r.Width + 1, r.Height + 1);
+
+            // shading helper: the suggestion drawn over the sprite, and the box
+            if (E.Tool == Tool.Shade && S == E.S)
+            {
+                if (E.ShadePreview && E.Shade != null && E.Shade.HasChanges) Pix.Draw(g, E.Shade.Overlay, r);
+                Rectangle? box = _shadeDrag ?? (E.ShadeArea.HasValue ? (Rectangle?)(E.Shade != null ? E.Shade.Region : E.ShadeArea.Value) : null);
+                if (box.HasValue)
+                {
+                    var b = box.Value;
+                    var sr = new Rectangle(r.X + b.X * Zoom, r.Y + b.Y * Zoom, b.Width * Zoom - 1, b.Height * Zoom - 1);
+                    using (var p1 = new Pen(Color.White, 1)) g.DrawRectangle(p1, sr);
+                    using (var p2 = new Pen(Theme.AccentBase, 1) { DashStyle = DashStyle.Dash }) g.DrawRectangle(p2, sr);
+                }
+            }
 
             if (E.Mirror)
             {
@@ -284,6 +307,9 @@ namespace PokeSpriteCreator.UI
                     Recolor(p, color);
                     _down = false;
                     break;
+                case Tool.Shade:
+                    _shadeDrag = Box(p, p);
+                    break;
             }
             Invalidate();
         }
@@ -328,6 +354,9 @@ namespace PokeSpriteCreator.UI
                 case Tool.Ellipse:
                     if (_target != null && p != _last) { _last = p; DrawShape(p, color); }
                     break;
+                case Tool.Shade:
+                    if (p != _last) { _last = p; _shadeDrag = Box(_start, p); Invalidate(); }
+                    break;
                 case Tool.Move:
                     if (p == _last) break;
                     _last = p;
@@ -346,6 +375,21 @@ namespace PokeSpriteCreator.UI
         protected override void OnMouseUp(MouseEventArgs e)
         {
             if (_panning) { _panning = false; UpdateCursor(); return; }
+            if (_down && E.Tool == Tool.Shade)
+            {
+                _down = false; Capture = false;
+                var box = _shadeDrag; _shadeDrag = null;
+                if (box.HasValue && box.Value.Width == 1 && box.Value.Height == 1 && E.Current != null)
+                {
+                    // a click: box the part under the mouse
+                    var around = ShadingHelper.AreaAround(E.Current.Frames[S.Frame], _start);
+                    box = around.Width > 0 ? (Rectangle?)around : null;
+                    if (box == null) E.Say("Click on a part of the sprite (on the selected layer), or drag a box over it.");
+                }
+                if (box.HasValue) E.SetShadeArea(box);
+                Invalidate();
+                return;
+            }
             if (_down)
             {
                 _down = false;
