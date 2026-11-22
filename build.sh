@@ -10,4 +10,7 @@ API=/usr/lib/mono/4.8-api
 MCS="mcs -langversion:5 -nowarn:1591,0168,0219,0649 -debug- -nostdlib -r:$API/mscorlib.dll -r:$API/System.dll -lib:$API"
 echo "== Poke Sprite Creator"
 $MCS -target:winexe -out:$OUT/PokeSpriteCreator.exe -recurse:'src/PokeSpriteCreator/*.cs' -r:$API/System.Core.dll -r:$API/System.Drawing.dll -r:$API/System.Windows.Forms.dll
+# parts that ship with the app
+rm -rf "$OUT/Built-in parts"
+cp -r builtin-parts "$OUT/Built-in parts"
 echo "Build OK -> $OUT/PokeSpriteCreator.exe"

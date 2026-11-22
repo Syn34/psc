@@ -140,6 +140,36 @@ namespace PokeSpriteCreator
             ow.Sheet = "Bike";
             Check(ExportDialog.DefaultFileName(ow, "TESTER") == "TESTER_bike.png", "bike file name");
 
+            // ---- built-in parts (the "Built-in parts" folder next to the exe)
+            var bi = Settings.BuiltInPartsFolder;
+            if (!Directory.Exists(bi)) Check(false, "built-in parts folder is missing: " + bi);
+            else
+            {
+                var both = new PartLibrary(root, bi);
+                var g5 = GenStyle.Get(5);
+                var nateCats = new[] { "Poses", "Shoes", "Bottoms", "Tops", "Backpacks", "Hair", "Visors", "Accessories" };
+                foreach (var cat in nateCats) Check(both.Categories(5, SpriteKind.Front, null).Contains(cat), "built-in category " + cat);
+                var nd = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+                Check(nd.Layout.FrameW == 80, "Gen 5 front is 80x80");
+                var ne = new Editor(new Settings()) { Lib = both };
+                ne.SetDocument(nd);
+                foreach (var cat in nateCats)
+                {
+                    var p = both.Parts(5, SpriteKind.Front, null, cat).FirstOrDefault(x => x.Name.StartsWith("Nate") && x.Name != "Nate line art");
+                    Check(p != null && p.BuiltIn && p.Sheet != null && p.Sheet.W == 80 && !p.FramesFor(nd.Layout).Loose, "built-in Nate part in " + cat);
+                    if (p != null) ne.SetPart(p, false);
+                }
+                var nate = nd.Composite(0);
+                Check(nate.Colors().Count == 15, "Nate rebuilt with 15 colours, got " + nate.Colors().Count);
+                Check(nd.Layers.OfType<PartLayer>().Select(l => l.Category).SequenceEqual(nateCats), "Nate layers in stack order");
+                // the user's own part with the same name wins
+                Save(new PixelImage(80, 80), root, "Gen 5/Front/Hair/Nate.png");
+                both.Refresh();
+                var hairPart = both.Find(5, SpriteKind.Front, null, "Hair", "Nate");
+                Check(hairPart != null && !hairPart.BuiltIn && both.Parts(5, SpriteKind.Front, null, "Hair").Count(x => x.Name == "Nate") == 1, "user part replaces built-in");
+                Check(both.CountBuiltIn() == 9, "9 built-in parts, got " + both.CountBuiltIn());
+            }
+
             // ---- shapes
             Check(SpriteCanvas.LinePoints(new Point(0, 0), new Point(5, 2)).Count() == 6, "line");
             Check(SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), true).Count() > SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), false).Count(), "ellipse filled > outline");

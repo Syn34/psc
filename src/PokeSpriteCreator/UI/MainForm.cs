@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.1.0";
+        public const string Version = "0.1.1";
 
         readonly Editor E;
         readonly SpriteCanvas _canvas;
@@ -96,9 +96,9 @@ namespace PokeSpriteCreator.UI
             _canvas.FitToWindow();
             if (!string.IsNullOrEmpty(_openOnStart)) OpenFile(_openOnStart);
             else if (Environment.GetEnvironmentVariable("PSC_NO_NEW_DIALOG") == null) BeginInvoke((Action)(() => NewSprite()));
-            int n = E.Lib.CountAll();
-            if (n == 0) E.Say("Your parts folder is empty - add PNG parts to " + E.Lib.Root + " (Help > Parts folder guide). Free-hand drawing works without parts.");
-            else E.Say(n + " parts in " + E.Lib.Root);
+            int n = E.Lib.CountAll(), b = E.Lib.CountBuiltIn();
+            if (n == 0) E.Say((b > 0 ? b + " built-in parts. " : "") + "Add your own PNG parts to " + E.Lib.Root + " (Help > Parts folder guide). Free-hand drawing works without parts.");
+            else E.Say(n + " parts in " + E.Lib.Root + (b > 0 ? " + " + b + " built-in" : ""));
         }
 
         // ------------------------------------------------------------------ menu & toolbar
@@ -176,7 +176,7 @@ namespace PokeSpriteCreator.UI
             view.DropDownOpening += (s, a) => UpdateMenus();
 
             var help = new ToolStripMenuItem("&Help");
-            help.DropDownItems.Add(Item("&Parts folder guide", Keys.F1, () => ShowText("Parts folder guide", PartLibrary.Guide.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n") + "\r\nYour parts folder: " + E.Lib.Root)));
+            help.DropDownItems.Add(Item("&Parts folder guide", Keys.F1, () => ShowText("Parts folder guide", PartLibrary.Guide.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n") + "\r\nYour parts folder: " + E.Lib.Root + "\r\nBuilt-in parts: " + E.Lib.BuiltInRoot)));
             help.DropDownItems.Add(Item("&Keyboard shortcuts", Keys.None, () => ShowText("Keyboard shortcuts", Shortcuts)));
             help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, AppName + " " + Version + "\r\nA sprite maker for Pokémon fan games (trainer front & back sprites and overworld sheets, Gen 1 to Gen 5 styles).\r\nCompanion app for PokeCreator.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 

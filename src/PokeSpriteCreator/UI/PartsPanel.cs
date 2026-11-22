@@ -84,7 +84,7 @@ namespace PokeSpriteCreator.UI
             FillCategories();
             E.InvalidatePreview();
             E.Changed();
-            E.Say("Parts reloaded from " + E.Lib.Root);
+            E.Say("Parts reloaded from " + E.Lib.Root + (E.Lib.CountBuiltIn() > 0 ? " and the built-in parts" : ""));
         }
 
         void OpenFolder()
@@ -168,7 +168,7 @@ namespace PokeSpriteCreator.UI
                 for (int i = 0; i < _parts.Count; i++)
                 {
                     _images.Images.Add(Thumb(_parts[i]));
-                    _list.Items.Add(new ListViewItem(_parts[i].Name, i + 1) { Tag = _parts[i], ToolTipText = _parts[i].Path });
+                    _list.Items.Add(new ListViewItem(_parts[i].Name, i + 1) { Tag = _parts[i], ToolTipText = (_parts[i].BuiltIn ? "Built-in part (comes with the app)\r\n" : "") + _parts[i].Path });
                 }
             }
             _list.EndUpdate();

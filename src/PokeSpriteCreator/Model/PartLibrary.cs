@@ -13,6 +13,8 @@ namespace PokeSpriteCreator.Model
     public class Part
     {
         public string Category, Name, Path, BehindPath;
+        /// <summary>Comes with the app (the "Built-in parts" folder next to the exe), not from the user's parts folder.</summary>
+        public bool BuiltIn;
         PixelImage _sheet, _behind;
         bool _loaded;
         readonly Dictionary<string, PartFrames> _frames = new Dictionary<string, PartFrames>();
@@ -108,41 +110,73 @@ namespace PokeSpriteCreator.Model
         }
     }
 
-    /// <summary>The parts folder: PARTS/Gen N/Front|Back/CATEGORY/*.png and PARTS/Gen N/Overworld/SHEET/CATEGORY/*.png</summary>
+    /// <summary>
+    /// The parts folder: PARTS/Gen N/Front|Back/CATEGORY/*.png and PARTS/Gen N/Overworld/SHEET/CATEGORY/*.png.
+    /// Parts come from two folders with the same layout: the user's own (Root) and the ones that ship with
+    /// the app (BuiltInRoot). Both are listed together; a user part with the same name replaces the built-in one.
+    /// </summary>
     public class PartLibrary
     {
         public string Root;
+        public string BuiltInRoot;
         /// <summary>The bottom-to-top layer order used when parts are added (overridden by order.txt in a kind folder).</summary>
         public static readonly string[] DefaultOrder = { "Poses", "Shoes", "Bottoms", "Tops", "Jackets", "Gloves", "Backpacks", "Hair", "Hats", "Visors", "Sunglasses", "Accessories", "Bikes" };
         public const string PoseCategory = "Poses";
         static readonly string[] Exts = { ".png", ".gif", ".bmp" };
         readonly Dictionary<string, List<Part>> _cache = new Dictionary<string, List<Part>>(StringComparer.OrdinalIgnoreCase);
 
-        public PartLibrary(string root) { Root = root; }
+        public PartLibrary(string root, string builtInRoot = null) { Root = root; BuiltInRoot = builtInRoot; }
 
         public void Refresh() { _cache.Clear(); }
 
-        public string KindFolder(int gen, SpriteKind kind, string sheet)
+        /// <summary>The user's folder for a gen / kind / sheet (where new parts go).</summary>
+        public string KindFolder(int gen, SpriteKind kind, string sheet) { return KindFolderIn(Root, gen, kind, sheet); }
+
+        static string KindFolderIn(string root, int gen, SpriteKind kind, string sheet)
         {
-            var p = System.IO.Path.Combine(Root, "Gen " + gen, KindNames.Folder(kind));
+            var p = System.IO.Path.Combine(root, "Gen " + gen, KindNames.Folder(kind));
             if (kind == SpriteKind.Overworld) p = System.IO.Path.Combine(p, string.IsNullOrEmpty(sheet) ? "Walk" : sheet);
             return p;
         }
 
-        /// <summary>Category folders for a gen / kind / sheet, in layer order.</summary>
+        /// <summary>The existing roots, built-in first.</summary>
+        IEnumerable<string> Roots
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(BuiltInRoot) && Directory.Exists(BuiltInRoot) && !SamePath(BuiltInRoot, Root)) yield return BuiltInRoot;
+                if (!string.IsNullOrEmpty(Root)) yield return Root;
+            }
+        }
+
+        static bool SamePath(string a, string b)
+        {
+            try { return string.Equals(System.IO.Path.GetFullPath(a).TrimEnd('\\', '/'), System.IO.Path.GetFullPath(b).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase); }
+            catch { return false; }
+        }
+
+        /// <summary>Category folders for a gen / kind / sheet (from both folders), in layer order.</summary>
         public List<string> Categories(int gen, SpriteKind kind, string sheet)
         {
-            var dir = KindFolder(gen, kind, sheet);
-            var names = Directory.Exists(dir) ? Directory.GetDirectories(dir).Select(d => System.IO.Path.GetFileName(d)).ToList() : new List<string>();
+            var names = new List<string>();
+            foreach (var root in Roots)
+            {
+                var dir = KindFolderIn(root, gen, kind, sheet);
+                if (!Directory.Exists(dir)) continue;
+                foreach (var d in Directory.GetDirectories(dir).Select(x => System.IO.Path.GetFileName(x)))
+                    if (!names.Contains(d, StringComparer.OrdinalIgnoreCase)) names.Add(d);
+            }
             var order = OrderFor(gen, kind, sheet);
             return names.OrderBy(n => Rank(order, n)).ThenBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         public List<string> OrderFor(int gen, SpriteKind kind, string sheet)
         {
-            var f = System.IO.Path.Combine(KindFolder(gen, kind, sheet), "order.txt");
-            if (File.Exists(f))
+            // the user's order.txt wins over a built-in one
+            foreach (var root in Roots.Reverse())
             {
+                var f = System.IO.Path.Combine(KindFolderIn(root, gen, kind, sheet), "order.txt");
+                if (!File.Exists(f)) continue;
                 try { return File.ReadAllLines(f).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith("#")).ToList(); }
                 catch { }
             }
@@ -160,22 +194,26 @@ namespace PokeSpriteCreator.Model
 
         public List<Part> Parts(int gen, SpriteKind kind, string sheet, string category)
         {
-            var dir = System.IO.Path.Combine(KindFolder(gen, kind, sheet), category);
+            var key = gen + "/" + kind + "/" + (kind == SpriteKind.Overworld ? sheet : "") + "/" + category;
             List<Part> list;
-            if (_cache.TryGetValue(dir, out list)) return list;
-            list = new List<Part>();
-            if (Directory.Exists(dir))
+            if (_cache.TryGetValue(key, out list)) return list;
+            var byName = new Dictionary<string, Part>(StringComparer.OrdinalIgnoreCase);
+            foreach (var root in Roots)
             {
+                bool builtIn = root == BuiltInRoot;
+                var dir = System.IO.Path.Combine(KindFolderIn(root, gen, kind, sheet), category);
+                if (!Directory.Exists(dir)) continue;
                 var files = Directory.GetFiles(dir).Where(f => Exts.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant())).ToList();
-                foreach (var f in files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                foreach (var f in files)
                 {
                     var name = System.IO.Path.GetFileNameWithoutExtension(f);
                     if (name.EndsWith("_behind", StringComparison.OrdinalIgnoreCase)) continue;
                     var behind = files.FirstOrDefault(o => string.Equals(System.IO.Path.GetFileNameWithoutExtension(o), name + "_behind", StringComparison.OrdinalIgnoreCase));
-                    list.Add(new Part { Category = category, Name = name, Path = f, BehindPath = behind });
+                    byName[name] = new Part { Category = category, Name = name, Path = f, BehindPath = behind, BuiltIn = builtIn };
                 }
             }
-            _cache[dir] = list;
+            list = byName.Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            _cache[key] = list;
             return list;
         }
 
@@ -188,17 +226,26 @@ namespace PokeSpriteCreator.Model
         public List<string> Sheets(int gen)
         {
             var list = OverworldSheets.Defaults.ToList();
-            var dir = System.IO.Path.Combine(Root, "Gen " + gen, "Overworld");
-            if (Directory.Exists(dir))
-                foreach (var d in Directory.GetDirectories(dir).Select(System.IO.Path.GetFileName))
-                    if (!list.Contains(d, StringComparer.OrdinalIgnoreCase)) list.Add(d);
+            foreach (var root in Roots)
+            {
+                var dir = System.IO.Path.Combine(root, "Gen " + gen, "Overworld");
+                if (Directory.Exists(dir))
+                    foreach (var d in Directory.GetDirectories(dir).Select(System.IO.Path.GetFileName))
+                        if (!list.Contains(d, StringComparer.OrdinalIgnoreCase)) list.Add(d);
+            }
             return list;
         }
 
-        public int CountAll()
+        /// <summary>Parts in the user's folder.</summary>
+        public int CountAll() { return CountIn(Root); }
+
+        /// <summary>Parts that came with the app.</summary>
+        public int CountBuiltIn() { return BuiltInRoot == null || SamePath(BuiltInRoot, Root ?? "") ? 0 : CountIn(BuiltInRoot); }
+
+        static int CountIn(string root)
         {
-            if (!Directory.Exists(Root)) return 0;
-            return Directory.GetFiles(Root, "*.*", SearchOption.AllDirectories).Count(f => Exts.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()) && !System.IO.Path.GetFileNameWithoutExtension(f).EndsWith("_behind", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return 0;
+            return Directory.GetFiles(root, "*.*", SearchOption.AllDirectories).Count(f => Exts.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()) && !System.IO.Path.GetFileNameWithoutExtension(f).EndsWith("_behind", StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>Creates the empty folder tree (so it's clear where each part goes) and the guide.</summary>
@@ -262,6 +309,11 @@ HOW PART PICTURES ARE USED
     (long hair behind the back, the far strap of a backpack, a bike's back wheel).
 
 POSES are the blank outlines users start from and fill in.
+
+BUILT-IN PARTS: the app also comes with a ""Built-in parts"" folder next to
+PokeSpriteCreator.exe (same layout as this folder). Those parts are always
+listed too. A part in this folder with the same category and name replaces
+the built-in one, so you can't lose them by editing your own parts.
 
 LAYER ORDER (bottom to top) when parts are added:
   Poses, Shoes, Bottoms, Tops, Jackets, Gloves, Backpacks, Hair, Hats, Visors,

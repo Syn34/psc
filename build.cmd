@@ -10,6 +10,9 @@ if not exist bin mkdir bin
 set OPTS=/nologo /optimize+ /nowarn:1591,0168,0219,0649
 echo == Poke Sprite Creator
 "%CSC%" %OPTS% /target:winexe /out:bin\PokeSpriteCreator.exe /recurse:src\PokeSpriteCreator\*.cs /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll || goto :fail
+rem parts that ship with the app
+if exist "bin\Built-in parts" rmdir /s /q "bin\Built-in parts"
+xcopy /e /i /q /y "builtin-parts" "bin\Built-in parts" >nul || goto :fail
 echo.
 echo Build OK. Run bin\PokeSpriteCreator.exe
 exit /b 0

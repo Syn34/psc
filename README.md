@@ -29,9 +29,19 @@ recolour every piece, and draw anything else free-hand.
 - Sprites save as `.psc` files, which keep a copy of the parts they use, so they open on another PC too.
 - Light and dark mode.
 
+## Built-in parts
+
+The app comes with a `Built-in parts` folder next to the exe (from `builtin-parts/` in this repo, copied by the build).
+It has the same layout as your own parts folder and is always listed alongside it.
+
+- **Gen 5 trainer front (80×80)**: Nate, cut into Poses (`Nate`, `Nate line art`), Hair, Visors, Tops, Backpacks (`Nate bag`),
+  Accessories (`Nate wristband`), Bottoms and Shoes. Wearing every piece rebuilds the original sprite exactly.
+
+A part of your own with the same category and name replaces the built-in one.
+
 ## Parts folder
 
-The app ships without any part art: you supply the parts. On first run it creates `Parts\` next to the exe
+Add your own parts here. On first run it creates `Parts\` next to the exe
 with an empty folder for every style, sprite kind and category, plus a `README.txt` guide
 (also under *Help > Parts folder guide*). You can point the app at another folder in *File > Change parts folder*.
 

@@ -34,6 +34,9 @@ namespace PokeSpriteCreator.Model
 
         public static string DefaultPartsFolder { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Parts"); } }
 
+        /// <summary>Parts that ship with the app (copied next to the exe by the build).</summary>
+        public static string BuiltInPartsFolder { get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Built-in parts"); } }
+
         public static Settings Load()
         {
             var s = new Settings();

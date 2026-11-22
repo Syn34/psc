@@ -11,4 +11,8 @@
     <NoWarn>1591;0168;0219;0649</NoWarn>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- parts that ship with the app -->
+    <None Include="..\..\builtin-parts\**\*.*" Link="Built-in parts\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -37,7 +37,7 @@ namespace PokeSpriteCreator.UI
         public event Action ToolChanged;
         public event Action<string> Status;
 
-        public Editor(Settings s) { Settings = s; Lib = new PartLibrary(s.PartsFolder); }
+        public Editor(Settings s) { Settings = s; Lib = new PartLibrary(s.PartsFolder, Settings.BuiltInPartsFolder); }
 
         public Layer Current { get { return Doc != null && LayerIndex >= 0 && LayerIndex < Doc.Layers.Count ? Doc.Layers[LayerIndex] : null; } }
         public PartLayer CurrentPart { get { return Current as PartLayer; } }
