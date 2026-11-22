@@ -17,7 +17,8 @@ namespace PokeSpriteCreator.UI
         readonly ShadePreviewBox _now, _after;
         readonly RampView _ramp;
         readonly Label _notes, _help;
-        readonly ComboBox _light, _outline;
+        readonly ComboBox _part, _light, _outline;
+        List<ShadePart> _parts = new List<ShadePart>();
         readonly CheckBox _natural, _under, _soft, _existing, _preview;
         readonly Button _apply, _clear;
         readonly ToolTip _tip = new ToolTip();
@@ -41,27 +42,29 @@ namespace PokeSpriteCreator.UI
             _now = new ShadePreviewBox { Left = 8, Top = 94, Width = 146, Height = 176 };
             _after = new ShadePreviewBox { Left = 160, Top = 94, Width = 146, Height = 176 };
 
-            var lightLbl = new Label { Text = "Light from", Left = 8, Top = 282, Width = 80, Height = 18 };
-            _light = new ComboBox { Left = 92, Top = 278, Width = 214, DropDownStyle = ComboBoxStyle.DropDownList };
+            var partLbl = new Label { Text = "Part", Left = 8, Top = 282, Width = 80, Height = 18 };
+            _part = new ComboBox { Left = 92, Top = 278, Width = 214, DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+            var lightLbl = new Label { Text = "Light from", Left = 8, Top = 312, Width = 80, Height = 18 };
+            _light = new ComboBox { Left = 92, Top = 308, Width = 214, DropDownStyle = ComboBoxStyle.DropDownList };
             _light.Items.AddRange(new object[] { "Automatic", "Left", "Top left", "Top", "Top right", "Right" });
             _light.SelectedIndex = 0;
-            var outLbl = new Label { Text = "Outline", Left = 8, Top = 312, Width = 80, Height = 18 };
-            _outline = new ComboBox { Left = 92, Top = 308, Width = 214, DropDownStyle = ComboBoxStyle.DropDownList };
+            var outLbl = new Label { Text = "Outline", Left = 8, Top = 342, Width = 80, Height = 18 };
+            _outline = new ComboBox { Left = 92, Top = 338, Width = 214, DropDownStyle = ComboBoxStyle.DropDownList };
             _outline.Items.AddRange(new object[] { "Add around it (outside)", "On its edge pixels", "No outline" });
             _outline.SelectedIndex = 0;
 
-            _natural = new CheckBox { Text = "Fix the shape too (more natural)", Left = 8, Top = 338, Width = 300, Height = 22 };
-            _under = new CheckBox { Text = "Shadow under the part above it", Left = 8, Top = 360, Width = 300, Height = 22, Checked = true };
-            _soft = new CheckBox { Text = "Softer outline on the lit side", Left = 8, Top = 382, Width = 300, Height = 22 };
-            _existing = new CheckBox { Text = "Only colours already in the sprite", Left = 8, Top = 404, Width = 300, Height = 22, Checked = true };
-            _preview = new CheckBox { Text = "Show the suggestion on the canvas", Left = 8, Top = 426, Width = 300, Height = 22, Checked = true };
+            _natural = new CheckBox { Text = "Fix the shape too (more natural)", Left = 8, Top = 368, Width = 300, Height = 22 };
+            _under = new CheckBox { Text = "Shadow under the part above it", Left = 8, Top = 390, Width = 300, Height = 22, Checked = true };
+            _soft = new CheckBox { Text = "Softer outline on the lit side", Left = 8, Top = 412, Width = 300, Height = 22 };
+            _existing = new CheckBox { Text = "Only colours already in the sprite", Left = 8, Top = 434, Width = 300, Height = 22, Checked = true };
+            _preview = new CheckBox { Text = "Show the suggestion on the canvas", Left = 8, Top = 456, Width = 300, Height = 22, Checked = true };
 
-            _ramp = new RampView { Left = 8, Top = 454, Width = 300, Height = 46 };
+            _ramp = new RampView { Left = 8, Top = 484, Width = 300, Height = 46 };
 
-            _apply = new Button { Text = "Apply", Left = 8, Top = 506, Width = 146, Height = 30, Enabled = false };
-            _clear = new Button { Text = "Clear box", Left = 160, Top = 506, Width = 146, Height = 30, Enabled = false };
+            _apply = new Button { Text = "Apply", Left = 8, Top = 536, Width = 146, Height = 30, Enabled = false };
+            _clear = new Button { Text = "Clear box", Left = 160, Top = 536, Width = 146, Height = 30, Enabled = false };
 
-            _notes = new Label { Left = 8, Top = 544, Width = 300, Height = 220, Font = Theme.UiFont };
+            _notes = new Label { Left = 8, Top = 574, Width = 300, Height = 220, Font = Theme.UiFont };
 
             _tip.SetToolTip(_light, "Which side the light comes from. Automatic works it out from how the rest of the sprite is shaded.");
             _tip.SetToolTip(_outline, "Add around it: a 1-pixel outline outside the part, where it meets the background.\nOn its edge pixels: keeps the part the same size.");
@@ -71,9 +74,16 @@ namespace PokeSpriteCreator.UI
             _tip.SetToolTip(_existing, "On: never adds colours, so you stay within the generation's colour limit. Off: makes a darker or lighter shade if the sprite doesn't have one.");
             _tip.SetToolTip(_apply, "Puts the suggested shading on the selected layer. Ctrl+Z undoes it.");
 
-            Controls.AddRange(new Control[] { title, _help, nowLbl, afterLbl, _now, _after, lightLbl, _light, outLbl, _outline, _natural, _under, _soft, _existing, _preview, _ramp, _apply, _clear, _notes });
+            Controls.AddRange(new Control[] { title, _help, nowLbl, afterLbl, _now, _after, partLbl, _part, lightLbl, _light, outLbl, _outline, _natural, _under, _soft, _existing, _preview, _ramp, _apply, _clear, _notes });
 
             EventHandler opts = (s, a) => { if (!_syncing) ReadOptions(); };
+            _part.SelectedIndexChanged += (s2, a2) =>
+            {
+                if (_syncing || _part.SelectedIndex < 0 || _part.SelectedIndex >= _parts.Count) return;
+                E.ShadeOptions.PartColor = _parts[_part.SelectedIndex].Main;
+                E.RecomputeShade();
+            };
+            _tip.SetToolTip(_part, "When the box has more than one part (hair, skin, a shirt…), which one to shade. The others are left alone.");
             _light.SelectedIndexChanged += opts; _outline.SelectedIndexChanged += opts;
             _natural.CheckedChanged += opts; _under.CheckedChanged += opts; _soft.CheckedChanged += opts; _existing.CheckedChanged += opts;
             _preview.CheckedChanged += (s, a) => { E.ShadePreview = _preview.Checked; E.RecomputeShade(); };
@@ -104,6 +114,23 @@ namespace PokeSpriteCreator.UI
         void Sync()
         {
             var s = E.Shade;
+            // the parts found in the box
+            _syncing = true;
+            try
+            {
+                var parts = s == null ? new List<ShadePart>() : s.Parts.ToList();
+                bool same = parts.Count == _parts.Count && parts.Select(p => p.Main).SequenceEqual(_parts.Select(p => p.Main));
+                if (!same)
+                {
+                    _parts = parts;
+                    _part.Items.Clear();
+                    foreach (var p in parts) _part.Items.Add(char.ToUpper(p.Name[0]) + p.Name.Substring(1) + "  " + PixelImage.Hex(p.Main) + "  (" + p.Pixels + " px)");
+                }
+                int sel = s == null || s.Part == null ? -1 : _parts.FindIndex(p => p.Main == s.Part.Main);
+                if (_part.SelectedIndex != sel) _part.SelectedIndex = sel;
+                _part.Enabled = _parts.Count > 1;
+            }
+            finally { _syncing = false; }
             _now.Set(s == null ? null : s.Before, s == null ? Rectangle.Empty : s.Region);
             _after.Set(s == null ? null : s.After, s == null ? Rectangle.Empty : s.Region);
             _ramp.Ramp = s == null || s.Pixels == 0 ? null : s.Ramp;

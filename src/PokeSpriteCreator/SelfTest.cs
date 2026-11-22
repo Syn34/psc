@@ -359,6 +359,32 @@ namespace PokeSpriteCreator
                 Check(nClick.After.Get(16, 18) == neck.Get(16, 18) && nClick.After.Get(17, 18) == neck.Get(17, 18), "small details drawn in a darker shade (the mouth) are kept");
                 var plain = ShadingHelper.Suggest(neck, neck, new Rectangle(10, 19, 15, 3), neckColors, new ShadeOptions { Light = LightFrom.Left });
                 Check(!plain.Notes.Any(n => n.Contains("narrower part")), "without \"more natural\" the shape isn't touched");
+                // a box over the whole head (hair, headband, face): one part at a time, the rest untouched
+                var headBox = new Rectangle(5, 0, 26, 22);
+                var hAuto = ShadingHelper.Suggest(neck, neck, headBox, neckColors, new ShadeOptions { Natural = true });
+                var skinPart = hAuto.Parts.FirstOrDefault(pp => pp.Name == "skin");
+                Check(hAuto.Part.Name == "skin", "automatic picks the skin (the hair has no darker shade of its own here): " + hAuto.Part.Name);
+                Check(hAuto.Parts.Count >= 3 && hAuto.Parts.Any(pp => pp.Name == "brown") && skinPart != null && hAuto.Parts.Any(pp => pp.Name == "red"),
+                      "a box over the head finds its parts: " + string.Join(", ", hAuto.Parts.Select(pp => pp.Name + " " + PixelImage.Hex(pp.Main)).ToArray()));
+                var hSkin = ShadingHelper.Suggest(neck, neck, headBox, neckColors, new ShadeOptions { Natural = true, PartColor = skinPart == null ? 0 : skinPart.Main });
+                Func<PixelImage, PixelImage, Func<int, bool>, bool> keeps = (bef, aft, which) =>
+                {
+                    for (int i = 0; i < bef.Px.Length; i++) if (which(bef.Px[i]) && aft.Px[i] != bef.Px[i]) return false;
+                    return true;
+                };
+                int hairBrown = nrgb(0x634A42), headRed = nrgb(0xCE5252), eyeWhite = nrgb(0xEFEFFF);
+                Check(keeps(neck, hSkin.After, c => c == headRed || c == eyeWhite), "shading the skin leaves the headband and eyes alone");
+                int hairChanged = 0;
+                for (int y = 0; y < 13; y++) for (int x = 0; x < neck.W; x++) if (neck.Get(x, y) == hairBrown && hSkin.After.Get(x, y) != hairBrown) hairChanged++;
+                Check(hairChanged == 0, "and the hair above the face (" + hairChanged + " hair pixels changed)");
+                var brownPart = hAuto.Parts.First(pp => pp.Name == "brown");
+                var hHair = ShadingHelper.Suggest(neck, neck, headBox, neckColors, new ShadeOptions { PartColor = brownPart.Main });
+                Check(hHair.Part.Name == "brown" && keeps(neck, hHair.After, c => c == headRed || c == eyeWhite || c == nrgb(0xFFD6BD) || c == nrgb(0xDEA57B)), "choosing the hair leaves the skin, headband and eyes alone");
+                Check(hSkin.Notes.Any(n => n.Contains("parts:")), "says the box has several parts");
+                neck.Scale(8).Save(Path.Combine(dir, "head_before.png"));
+                hAuto.After.Scale(8).Save(Path.Combine(dir, "head_auto.png"));
+                hSkin.After.Scale(8).Save(Path.Combine(dir, "head_skin.png"));
+                File.WriteAllText(Path.Combine(dir, "head_notes.txt"), "AUTO\r\n" + string.Join("\r\n", hAuto.Notes.ToArray()) + "\r\n\r\nSKIN\r\n" + string.Join("\r\n", hSkin.Notes.ToArray()));
                 File.WriteAllText(Path.Combine(dir, "neck_notes.txt"), "BOX " + nBox.Area + "\r\n" + string.Join("\r\n", nBox.Notes.ToArray()) + "\r\n\r\nCLICK " + nClick.Area + "\r\n" + string.Join("\r\n", nClick.Notes.ToArray()));
             }
 

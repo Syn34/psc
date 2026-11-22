@@ -345,6 +345,7 @@ namespace PokeSpriteCreator.UI
 
         public void SetShadeArea(Rectangle? area)
         {
+            if (area != ShadeArea) ShadeOptions.PartColor = 0;   // a new box: the biggest part again
             ShadeArea = area;
             RecomputeShade();
         }

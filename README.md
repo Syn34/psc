@@ -51,6 +51,10 @@ it, and the right-hand panel suggests shading for it the way a pixel artist woul
   neck is nearly as wide as the head, it's narrowed to about 60% of the head's width. It also fills gaps in the edge,
   smooths one-pixel bumps and removes stray dark pixels inside the part.
 - Small details drawn in a darker shade inside the part (a mouth, a nose) are always kept.
+- A box with several parts in it (say hair, skin and a headband) shades **one part** and leaves the others exactly as
+  they are. **Part** lists what's in the box; it starts with the biggest part that has a darker shade to shade with.
+  Shades of one part must be close in hue, in strength of colour and in lightness, so brown hair, a red headband and
+  skin are never treated as one thing.
 
 The panel shows the part now and suggested, the colours used (outline, under, shadow, base, highlight) and a list of
 what it changes and why (no outline, shaded on both sides, highlight too wide, too many shades…). The suggestion is also

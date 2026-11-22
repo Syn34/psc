@@ -16,6 +16,7 @@ namespace PokeSpriteCreator.Model
         public bool SoftLitOutline = false;     // lighter outline on the side facing the light
         public bool OnlyExisting = true;        // never suggest colours that aren't in the sprite yet
         public bool Natural = false;            // may change the shape too: necks, gaps, bumps, stray pixels
+        public int PartColor = 0;               // which part of the box to shade (its main colour); 0 = the biggest
     }
 
     /// <summary>The colours a suggestion uses (0 = none).</summary>
@@ -25,8 +26,18 @@ namespace PokeSpriteCreator.Model
         public readonly HashSet<int> New = new HashSet<int>();
     }
 
+    /// <summary>One thing found in the box (hair, skin, a shirt…): its main colour and size.</summary>
+    public class ShadePart
+    {
+        public int Main, Pixels;
+        public string Name;
+        public bool CanShade;   // the sprite has a darker shade of its main colour
+    }
+
     public class ShadeSuggestion
     {
+        public readonly List<ShadePart> Parts = new List<ShadePart>();
+        public ShadePart Part;                  // the one being shaded
         public Rectangle Area;                  // what the user picked (clipped to the frame)
         public Rectangle Region;                // Area plus the 1-pixel border an outside outline may use
         public PixelImage Before, After;        // the layer's whole frame, before and after
@@ -63,11 +74,46 @@ namespace PokeSpriteCreator.Model
         /// <summary>Two colours are shades of the same thing: both greyish, or close in hue.</summary>
         public static bool Related(int a, int b)
         {
+            if (!SameHue(a, b)) return false;
+            if (a == b || (Chroma(a) < 20 && Chroma(b) < 20)) return true;
+            // similar strength of colour too: dull brown hair, strong red and skin can share a hue but aren't one thing
+            double ca = Chroma(a), cb = Chroma(b);
+            return Math.Min(ca, cb) / Math.Max(ca, cb) >= 0.35;
+        }
+
+        /// <summary>Close in hue (or both greyish), whatever the strength: used to pick an outline colour.</summary>
+        static bool SameHue(int a, int b)
+        {
             if (a == 0 || b == 0) return false;
             if (a == b) return true;
             bool ga = Chroma(a) < 20, gb = Chroma(b) < 20;
             if (ga || gb) return ga && gb;
             return HueDiff(Hue(a), Hue(b)) <= 18;
+        }
+
+        /// <summary>A shade of the part whose main colour is 'main': related, not much darker (that's outline)
+        /// and not far lighter (that's another material, like skin next to brown hair).</summary>
+        public static bool Tone(int c, int main)
+        {
+            return c != 0 && Related(c, main) && L(c) >= L(main) * 0.55 && L(c) <= L(main) + 0.45;
+        }
+
+        /// <summary>A rough name for a colour, to tell the parts in a box apart.</summary>
+        public static string NameOf(int c)
+        {
+            double h, sat, l; ColorTools.ToHsl(c, out h, out sat, out l);
+            double lu = L(c);
+            if (Chroma(c) < 20) return lu > 0.8 ? "white" : lu < 0.2 ? "black" : "grey";
+            if (h < 45 && lu >= 0.6 && Chroma(c) < 120) return "skin";
+            if (h < 45 && lu < 0.5 && Chroma(c) < 90) return "brown";
+            if (h < 15 || h >= 340) return lu > 0.7 ? "pink" : "red";
+            if (h < 45) return "orange";
+            if (h < 70) return "yellow";
+            if (h < 170) return "green";
+            if (h < 200) return "teal";
+            if (h < 255) return "blue";
+            if (h < 290) return "purple";
+            return "pink";
         }
 
         static double L(int c) { return PixelImage.Luma(c); }
@@ -92,7 +138,7 @@ namespace PokeSpriteCreator.Model
                     int nx = q.X + d.X, ny = q.Y + d.Y;
                     if (!img.Inside(nx, ny) || seen[ny * img.W + nx]) continue;
                     int c = img.Get(nx, ny);
-                    if (!Related(c, start) || L(c) < thr) continue;
+                    if (!Tone(c, start)) continue;
                     seen[ny * img.W + nx] = true;
                     stack.Push(new Point(nx, ny));
                 }
@@ -204,23 +250,32 @@ namespace PokeSpriteCreator.Model
                     if (c != 0) { int n; counts.TryGetValue(c, out n); counts[c] = n + 1; }
                 }
             if (counts.Count == 0) { s.Notes.Add("There's nothing on the selected layer in that box."); return s; }
-            int top = 0, topFamily = -1;
-            // near-black is nearly always outline (or a dark shirt): only pick it when there's nothing lighter in the box
+            // the parts in the box: group its colours (most used first) into shades of one thing each.
+            // Near-black is nearly always outline (or a dark shirt): only a part when there's nothing lighter.
             bool anyLight = counts.Keys.Any(c => L(c) >= 0.25);
-            foreach (var c in counts.Keys)
+            var left = counts.Where(kv => !anyLight || L(kv.Key) >= 0.25).OrderByDescending(kv => kv.Value).Select(kv => kv.Key).ToList();
+            int total = left.Sum(c => counts[c]);
+            while (left.Count > 0)
             {
-                if (anyLight && L(c) < 0.25) continue;
-                int fam = counts.Where(kv => Related(kv.Key, c) && (!anyLight || L(kv.Key) >= 0.25)).Sum(kv => kv.Value);
-                if (fam > topFamily || (fam == topFamily && counts[c] > counts[top])) { topFamily = fam; top = c; }
+                int main = left[0];
+                var tones = left.Where(c => Tone(c, main)).ToList();
+                int n = tones.Sum(c => counts[c]);
+                if (n >= Math.Max(4, total / 12))
+                    s.Parts.Add(new ShadePart { Main = main, Pixels = n, Name = NameOf(main),
+                        CanShade = spriteColors.Concat(counts.Keys).Any(c => Tone(c, main) && L(c) < L(main) - 0.03) });
+                left.RemoveAll(c => tones.Contains(c));
             }
-            // the most used colour of that family is the part's main colour
-            top = counts.Where(kv => Related(kv.Key, top)).OrderByDescending(kv => kv.Value).First().Key;
+            if (s.Parts.Count == 0) s.Parts.Add(new ShadePart { Main = counts.OrderByDescending(kv => kv.Value).First().Key, Pixels = counts.Values.Sum(), Name = "part" });
+            // automatic: the biggest part that has a darker shade of its own to shade with
+            var chosen = s.Parts.FirstOrDefault(p => p.Main == o.PartColor) ?? s.Parts.FirstOrDefault(p => p.CanShade) ?? s.Parts[0];
+            int top = chosen.Main;
+            s.Part = chosen;
             double thr = L(top) * 0.55;   // much darker than the part = outline
 
             // 2. its tones in the whole sprite, light to dark
-            var family = spriteColors.Concat(counts.Keys).Distinct().Where(c => Related(c, top)).ToList();
-            var light = family.Where(c => L(c) >= thr).OrderBy(c => L(c)).ToList();
-            var dark = family.Where(c => L(c) < thr).OrderBy(c => L(c)).ToList();
+            var all = spriteColors.Concat(counts.Keys).Distinct().ToList();
+            var light = all.Where(c => Tone(c, top)).OrderBy(c => L(c)).ToList();
+            var dark = all.Where(c => SameHue(c, top) && L(c) < thr).OrderBy(c => L(c)).ToList();
             var ramp = s.Ramp;
             int nl = light.Count;
             if (nl == 0) ramp.Base = top;
@@ -269,8 +324,39 @@ namespace PokeSpriteCreator.Model
                 for (int x = area.Left; x < area.Right; x++)
                 {
                     int c = layer.Get(x, y);
-                    if (Related(c, top) && L(c) >= thr) { inPart[y * W + x] = true; partCount++; }
+                    if (Tone(c, top)) inPart[y * W + x] = true;
                 }
+            // only connected areas of it that matter (not stray pixels of a similar colour elsewhere in the box)
+            {
+                var comp = new int[W * H];
+                var sizes = new List<int> { 0 };
+                for (int y = area.Top; y < area.Bottom; y++)
+                    for (int x = area.Left; x < area.Right; x++)
+                    {
+                        if (!inPart[y * W + x] || comp[y * W + x] != 0) continue;
+                        int id = sizes.Count, size = 0;
+                        var st = new Stack<Point>(); st.Push(new Point(x, y)); comp[y * W + x] = id;
+                        while (st.Count > 0)
+                        {
+                            var q = st.Pop(); size++;
+                            foreach (var d in Four)
+                            {
+                                int nx = q.X + d.X, ny = q.Y + d.Y;
+                                if (!area.Contains(nx, ny) || !inPart[ny * W + nx] || comp[ny * W + nx] != 0) continue;
+                                comp[ny * W + nx] = id; st.Push(new Point(nx, ny));
+                            }
+                        }
+                        sizes.Add(size);
+                    }
+                int biggest = sizes.Max();
+                for (int y = area.Top; y < area.Bottom; y++)
+                    for (int x = area.Left; x < area.Right; x++)
+                    {
+                        int id = comp[y * W + x];
+                        if (id == 0) continue;
+                        if (sizes[id] < Math.Max(4, biggest * 3 / 10)) inPart[y * W + x] = false; else partCount++;
+                    }
+            }
             s.Pixels = partCount;
             Func<int, int, bool> part = (x, y) => x >= 0 && y >= 0 && x < W && y < H && inPart[y * W + x];
             var after = s.After;
@@ -403,6 +489,10 @@ namespace PokeSpriteCreator.Model
                 for (int x = 0; x < W; x++)
                     if (after.Get(x, y) != layer.Get(x, y)) { s.Changed++; s.Overlay.Set(x, y, after.Get(x, y)); }
             Explain(s, layer, inPart, part, bgEdge, outside, lv, o, underCount, counts, top);
+            if (s.Parts.Count > 1)
+                s.Notes.Insert(Math.Min(1, s.Notes.Count), "This box has " + s.Parts.Count + " parts: " +
+                    string.Join(", ", s.Parts.Select(p => p.Name + " (" + PixelImage.Hex(p.Main) + ")").ToArray()) +
+                    ". Only the " + s.Part.Name + " is shaded; the rest is left as it is. Pick another under Part, or draw a box around just one part.");
             if (detail.Count > 0)
             {
                 int at2 = s.Notes.FindIndex(n => n.StartsWith("Changes ") || n.StartsWith("Nothing to change"));
@@ -443,7 +533,7 @@ namespace PokeSpriteCreator.Model
         {
             int W = after.W, H = after.H;
             Func<int, int, bool> part = (x, y) => x >= 0 && y >= 0 && x < W && y < H && inPart[y * W + x];
-            Func<int, bool> fam = c => Related(c, top) && L(c) >= thr;
+            Func<int, bool> fam = c => Tone(c, top);
 
             // gaps and specks: a dark pixel with the part on all four sides, or an empty one with it on three
             for (int pass = 0; pass < 2; pass++)
@@ -571,8 +661,8 @@ namespace PokeSpriteCreator.Model
                 for (int x = A.Left; x < A.Right; x++)
                 {
                     int c = before.Get(x, y);
-                    if (!Related(c, top) || L(c) < L(top) * 0.55) continue;
-                    Func<int, int, bool> inside = (px, py) => before.Inside(px, py) && Related(before.Get(px, py), top) && L(before.Get(px, py)) >= L(top) * 0.55;
+                    if (!Tone(c, top)) continue;
+                    Func<int, int, bool> inside = (px, py) => before.Inside(px, py) && Tone(before.Get(px, py), top);
                     int dl = 1; while (inside(x + lv.X * dl, y + lv.Y * dl)) dl++;
                     int ds = 1; while (inside(x - lv.X * ds, y - lv.Y * ds)) ds++;
                     if (dl + ds - 1 < 3) continue;
@@ -596,14 +686,14 @@ namespace PokeSpriteCreator.Model
                 for (int x = A.Left; x < A.Right; x++)
                 {
                     int c = before.Get(x, y);
-                    if (!Related(c, top) || L(c) < L(top) * 0.55) continue;
+                    if (!Tone(c, top)) continue;
                     partNow++;
                     if (c == r.Highlight && r.Highlight != r.Base) hiNow++;
                 }
             if (partNow > 0 && hiNow * 100 / partNow > 35)
                 notes.Add("The highlight colour covers " + (hiNow * 100 / partNow) + "% of it. Keep highlights to a thin line one pixel in from the lit edge.");
 
-            int tones = counts.Keys.Count(c => Related(c, top) && L(c) >= L(top) * 0.55);
+            int tones = counts.Keys.Count(c => Tone(c, top));
             if (tones >= 5) notes.Add(tones + " shades of the same colour. Three (plus the outline) read better at this size.");
             if (underCount > 0) notes.Add("Adds a darker row (" + PixelImage.Hex(r.Under) + ") right under the part above it, as if it casts a shadow.");
 

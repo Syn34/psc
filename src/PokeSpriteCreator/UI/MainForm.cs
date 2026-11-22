@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.5.1";
+        public const string Version = "0.5.2";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;
@@ -261,6 +261,9 @@ namespace PokeSpriteCreator.UI
    shadow and is narrowed if it's nearly as wide as the head; gaps in the edge
    are filled, one-pixel bumps smoothed and stray dark pixels removed.
    Small details drawn in a darker shade (a mouth, a nose) are always kept.
+   A box with several parts in it (hair, skin, a headband) shades one of them
+   and leaves the rest alone: pick which under Part (it starts with the
+   biggest part that has a darker shade to shade with).
    Change the light, outline and options to taste; Apply (Enter) puts it on the
    selected layer, Ctrl+Z takes it off, Esc clears the box.
 
