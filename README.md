@@ -50,6 +50,19 @@ picture used in `Graphics/Characters`. They're saved in the same `.psc` file as 
 - **Export sheet…** saves the sheet (`trainer_NAME.png`) at 1×–4×, to a file or into a game folder.
 - An overworld sheet opened on its own works the same way.
 
+## Tabs and side-by-side comparing
+
+- Every sprite you open or make gets its own **tab** above the canvas, with its own undo, zoom and scroll. **+** makes a
+  new sprite; **×**, middle-click or Ctrl+W closes a tab (you're asked to save changes first). Ctrl+Tab / Ctrl+Shift+Tab
+  switch tabs. Opening a file that's already open goes to its tab.
+- The editing window has **scroll bars** on the right and bottom once you zoom past the window. Mouse wheel scrolls up/down,
+  Shift+wheel sideways, Ctrl+wheel zooms (around the mouse), middle-drag or Space+drag pans.
+- **Compare side by side:** drag a tab onto the canvas, or right-click a tab, or *View > Compare side by side with*. Both
+  sprites show next to each other, each with its own scroll bars; click either side to edit it (the side you're editing
+  says *Editing*). Both sides zoom together unless you turn off *View > Link zoom while comparing*. Clicking another tab
+  while comparing puts it in the side you're editing. **Stop comparing** (above either side, or in *View*) goes back to
+  one sprite.
+
 ## Exporting
 
 *File > Export PNG* (Ctrl+E) saves at 1×–4× to any file or straight into a PokeCreator / Essentials game folder with the
@@ -76,11 +89,11 @@ layers become paint layers.
 The source is C# 5 for .NET Framework 4.8 with WinForms, no NuGet packages.
 
 `PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and walking sheet and checks picture import, editing,
-colour limits, saving (with walking sprites), exporting and copying changes between frames.
+colour limits, saving (with walking sprites), exporting, copying changes between frames, tabs, comparing and scrolling.
 
 ## Keyboard shortcuts
 
 B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour ·
 X swap colours · S mirror · Alt+click pick colour · Shift = filled shape / straight line ·
-arrows nudge the layer · Ctrl+wheel zoom · middle-drag pan · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
+arrows nudge the layer · wheel / Shift+wheel scroll · Ctrl+wheel zoom · middle-drag pan · Ctrl+Tab next tab · Ctrl+W close tab · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
 Ctrl+I import picture · Ctrl+S save · Ctrl+E export · Ctrl+Shift+W / Ctrl+Shift+D copy my change to its walking steps / all directions

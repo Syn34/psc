@@ -12,10 +12,15 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.3.0";
+        public const string Version = "0.4.0";
 
         readonly Editor E;
-        readonly SpriteCanvas _canvas;
+        readonly CanvasView _single, _left, _right;
+        readonly SplitContainer _split;
+        readonly Panel _canvasHost;
+        readonly TabBar _tabBar;
+        bool _linkZoom = true, _zoomSyncing;
+        ToolStripMenuItem _compareMenu, _stopCompareItem, _linkZoomItem;
         readonly InGamePanel _dirs;
         readonly LayersPanel _layers;
         readonly ColorPanel _colors;
@@ -42,11 +47,22 @@ namespace PokeSpriteCreator.UI
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
 
-            _canvas = new SpriteCanvas(E) { Dock = DockStyle.Fill };
+            // the editing area: tabs on top, one canvas (or two side by side when comparing), frames below
+            _tabBar = new TabBar(E) { Dock = DockStyle.Top };
+            _single = new CanvasView(E, false) { Dock = DockStyle.Fill };
+            _left = new CanvasView(E, true) { Dock = DockStyle.Fill };
+            _right = new CanvasView(E, true) { Dock = DockStyle.Fill };
+            _split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Vertical, SplitterWidth = 6, Visible = false, Tag = "keep" };
+            _split.Panel1.Controls.Add(_left);
+            _split.Panel2.Controls.Add(_right);
+            _canvasHost = new Panel { Dock = DockStyle.Fill, Tag = "keep" };
+            _canvasHost.Controls.Add(_single);
+            _canvasHost.Controls.Add(_split);
             _frames = new FrameStrip(E) { Dock = DockStyle.Bottom, Visible = false };
             var center = new Panel { Dock = DockStyle.Fill, Tag = "keep" };
-            center.Controls.Add(_canvas);
+            center.Controls.Add(_canvasHost);
             center.Controls.Add(_frames);
+            center.Controls.Add(_tabBar);
 
             _dirs = new InGamePanel(E) { Dock = DockStyle.Right, Width = 322 };
             var left = new Panel { Dock = DockStyle.Left, Width = 318, Tag = "panel" };
@@ -81,9 +97,25 @@ namespace PokeSpriteCreator.UI
             E.DocChanged += UpdateTitle;
             E.LayersChanged += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; UpdateMenus(); };
             E.ToolChanged += SyncToolButtons;
-            E.PartSwitched += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; _canvas.FitToWindow(); };
-            _canvas.HoverChanged += (p, c) => _pos.Text = p.HasValue ? p.Value.X + ", " + p.Value.Y + "   " + PixelImage.Hex(c) : "";
-            _canvas.ZoomChanged += () => _zoomLbl.Text = _canvas.Zoom * 100 + "%";
+            E.PartSwitched += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; _zoomLbl.Text = ActiveCanvas.Zoom * 100 + "%"; };
+            E.TabsChanged += () => { UpdateTitle(); UpdateMenus(); };
+            E.CompareChanged += ShowCompare;
+            foreach (var v in new[] { _single, _left, _right })
+            {
+                var cv = v;
+                cv.Canvas.HoverChanged += (p, c) => _pos.Text = p.HasValue ? p.Value.X + ", " + p.Value.Y + "   " + PixelImage.Hex(c) : "";
+                cv.Canvas.ZoomChanged += () => { _zoomLbl.Text = cv.Canvas.Zoom * 100 + "%"; LinkZoom(cv); };
+                cv.StopRequested += () => E.StopCompare();
+            }
+            _tabBar.NewRequested += () => NewSprite();
+            _tabBar.CloseRequested += s => CloseTab(s);
+            _tabBar.Dropped += (s, pt) =>
+            {
+                // a tab dragged onto the canvas: compare it with the tab being edited
+                if (!_canvasHost.RectangleToScreen(_canvasHost.ClientRectangle).Contains(pt)) return;
+                if (s == E.S) { E.Say("Drag a different tab onto the canvas to compare it with this one."); return; }
+                E.StartCompare(E.S, s);
+            };
 
             ApplyTheme();
             SyncToolButtons();
@@ -93,7 +125,7 @@ namespace PokeSpriteCreator.UI
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            _canvas.FitToWindow();
+            ActiveCanvas.FitToWindow();
             if (!string.IsNullOrEmpty(_openOnStart)) OpenFile(_openOnStart);
             else if (Environment.GetEnvironmentVariable("PSC_NO_NEW_DIALOG") == null) BeginInvoke((Action)(() => NewSprite()));
             E.Say("Draw a sprite or bring in a picture (File > Import picture). Add the trainer's walking sprites on the right.");
@@ -111,6 +143,8 @@ namespace PokeSpriteCreator.UI
             file.DropDownItems.Add(Item("Import picture as a &layer…", Keys.Control | Keys.Shift | Keys.I, () => ImportAsLayer()));
             _recentMenu = new ToolStripMenuItem("Open &recent");
             file.DropDownItems.Add(_recentMenu);
+            file.DropDownItems.Add(new ToolStripSeparator());
+            file.DropDownItems.Add(Item("&Close tab", Keys.Control | Keys.W, () => CloseTab(E.S)));
             file.DropDownItems.Add(new ToolStripSeparator());
             file.DropDownItems.Add(Item("&Save", Keys.Control | Keys.S, () => Save(false)));
             file.DropDownItems.Add(Item("Save &as…", Keys.Control | Keys.Shift | Keys.S, () => Save(true)));
@@ -159,9 +193,18 @@ namespace PokeSpriteCreator.UI
             _framesMenu.DropDownItems.Add(_onionItem);
 
             var view = new ToolStripMenuItem("&View");
-            view.DropDownItems.Add(Item("Zoom &in", Keys.Control | Keys.Oemplus, () => _canvas.ZoomBy(1)));
-            view.DropDownItems.Add(Item("Zoom &out", Keys.Control | Keys.OemMinus, () => _canvas.ZoomBy(-1)));
-            view.DropDownItems.Add(Item("&Fit to window", Keys.Control | Keys.D0, () => _canvas.FitToWindow()));
+            view.DropDownItems.Add(Item("Zoom &in", Keys.Control | Keys.Oemplus, () => ActiveCanvas.ZoomBy(1)));
+            view.DropDownItems.Add(Item("Zoom &out", Keys.Control | Keys.OemMinus, () => ActiveCanvas.ZoomBy(-1)));
+            view.DropDownItems.Add(Item("&Fit to window", Keys.Control | Keys.D0, () => ActiveCanvas.FitToWindow()));
+            view.DropDownItems.Add(new ToolStripSeparator());
+            _compareMenu = new ToolStripMenuItem("&Compare side by side with");
+            _stopCompareItem = Item("&Stop comparing", Keys.None, () => E.StopCompare());
+            _linkZoomItem = Item("&Link zoom while comparing", Keys.None, () => { _linkZoom = !_linkZoom; _linkZoomItem.Checked = _linkZoom; if (_linkZoom && E.Comparing) LinkZoom(ActiveView); });
+            view.DropDownItems.Add(_compareMenu);
+            view.DropDownItems.Add(_stopCompareItem);
+            view.DropDownItems.Add(_linkZoomItem);
+            view.DropDownItems.Add(Item("Next tab", Keys.Control | Keys.PageDown, () => NextTab(1)));
+            view.DropDownItems.Add(Item("Previous tab", Keys.Control | Keys.PageUp, () => NextTab(-1)));
             view.DropDownItems.Add(new ToolStripSeparator());
             _gridItem = Item("Pixel &grid", Keys.Control | Keys.G, () => ToggleGrid());
             _limitItem = Item("Show with the generation's &colour limit", Keys.None, () => { if (E.Doc == null) return; E.Doc.LimitPalette = !E.Doc.LimitPalette; E.InvalidatePreview(); E.LayersEdited(); });
@@ -174,7 +217,7 @@ namespace PokeSpriteCreator.UI
             var help = new ToolStripMenuItem("&Help");
             help.DropDownItems.Add(Item("&How it works", Keys.F1, () => ShowText("How it works", HowItWorks)));
             help.DropDownItems.Add(Item("&Keyboard shortcuts", Keys.None, () => ShowText("Keyboard shortcuts", Shortcuts)));
-            help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, AppName + " " + Version + "\r\nA sprite editor for Pokémon fan games (trainer front & back sprites and overworld sheets, Gen 1 to Gen 5 styles). Saving a trainer front sprite makes its overworld walking sprite.\r\nCompanion app for PokeCreator.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information)));
+            help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, AppName + " " + Version + "\r\nA sprite editor for Pokémon fan games (trainer front & back sprites and overworld sheets, Gen 1 to Gen 5 styles). Trainer front sprites keep their walking sprites in the same file.\r\nCompanion app for PokeCreator.", "About", MessageBoxButtons.OK, MessageBoxIcon.Information)));
 
             m.Items.AddRange(new ToolStripItem[] { file, edit, layer, _framesMenu, view, help });
             return m;
@@ -214,7 +257,20 @@ namespace PokeSpriteCreator.UI
    * Export sheet saves it (trainer_NAME.png for Graphics/Characters).
    An overworld sheet opened on its own works the same way.
 
-4. EXPORT
+4. TABS AND COMPARING
+   Every sprite you open or make gets its own tab above the canvas, with its own
+   undo, zoom and scroll. Click a tab to switch (Ctrl+Tab), + for a new sprite,
+   x or middle-click to close (Ctrl+W); you're asked to save changes first.
+   The scroll bars (right and bottom) move around a zoomed-in sprite; the mouse
+   wheel scrolls up/down, Shift + wheel sideways, Ctrl + wheel zooms.
+   To compare two sprites side by side, drag a tab onto the canvas (or
+   right-click a tab, or View > Compare side by side with). Click either side
+   to edit it; the side you're editing says ""Editing"". Both sides zoom
+   together (View > Link zoom while comparing). Clicking another tab while
+   comparing puts it in the side you're editing. ""Stop comparing"" (above
+   either side, or in the View menu) goes back to one sprite.
+
+5. EXPORT
    File > Export PNG saves the sprite at 1x to 4x, to any file or straight into
    a PokeCreator / Essentials game folder with the right file name.";
 
@@ -235,8 +291,14 @@ DRAWING
   Arrow keys          nudge the selected layer 1 pixel
 
 VIEW
+  Mouse wheel         scroll up / down     Shift + wheel  scroll sideways
   Ctrl + mouse wheel  zoom      Middle mouse / Space + drag  pan
   Ctrl+= / Ctrl+-     zoom      Ctrl+0  fit       Ctrl+G  grid
+
+TABS
+  Ctrl+Tab / Ctrl+Shift+Tab (or Ctrl+PgDn / Ctrl+PgUp)  next / previous tab
+  Ctrl+W  close tab      Middle-click a tab  close it
+  Drag a tab onto the canvas  compare it side by side
 
 FRAMES
   Ctrl+Left / Ctrl+Right   previous / next frame
@@ -290,18 +352,18 @@ FILE
             AddTool(t, Tool.Recolor, "Recolor", "C");
             t.Items.Add(new ToolStripSeparator());
             _mirrorBtn = new ToolStripButton("Mirror") { CheckOnClick = true, Image = Icons.Get("Mirror"), DisplayStyle = ToolStripItemDisplayStyle.ImageAndText, ToolTipText = "Mirror drawing left/right (S)" };
-            _mirrorBtn.CheckedChanged += (s, a) => { E.Mirror = _mirrorBtn.Checked; _canvas.Invalidate(); };
+            _mirrorBtn.CheckedChanged += (s, a) => { E.Mirror = _mirrorBtn.Checked; InvalidateCanvases(); };
             _mergedBtn = new ToolStripButton("Fill sees all layers") { CheckOnClick = true, Checked = true, ToolTipText = "On: Fill stops at the outlines of everything you can see (colour in line art on another layer). Off: Fill only looks at the selected layer." };
             _mergedBtn.CheckedChanged += (s, a) => E.SampleMerged = _mergedBtn.Checked;
             _gridBtn = new ToolStripButton("Grid") { CheckOnClick = true, Checked = E.Settings.ShowGrid, ToolTipText = "Pixel grid (Ctrl+G)" };
-            _gridBtn.CheckedChanged += (s, a) => { E.Settings.ShowGrid = _gridBtn.Checked; _canvas.Invalidate(); };
+            _gridBtn.CheckedChanged += (s, a) => { E.Settings.ShowGrid = _gridBtn.Checked; InvalidateCanvases(); };
             t.Items.Add(_mirrorBtn);
             t.Items.Add(_mergedBtn);
             t.Items.Add(_gridBtn);
             t.Items.Add(new ToolStripSeparator());
-            t.Items.Add(TextBtn("−", "Zoom out (Ctrl+-)", () => _canvas.ZoomBy(-1)));
-            t.Items.Add(TextBtn("+", "Zoom in (Ctrl+=)", () => _canvas.ZoomBy(1)));
-            t.Items.Add(TextBtn("Fit", "Fit to window (Ctrl+0)", () => _canvas.FitToWindow()));
+            t.Items.Add(TextBtn("−", "Zoom out (Ctrl+-)", () => ActiveCanvas.ZoomBy(-1)));
+            t.Items.Add(TextBtn("+", "Zoom in (Ctrl+=)", () => ActiveCanvas.ZoomBy(1)));
+            t.Items.Add(TextBtn("Fit", "Fit to window (Ctrl+0)", () => ActiveCanvas.FitToWindow()));
             return t;
         }
 
@@ -348,6 +410,19 @@ FILE
             if (_darkItem != null) _darkItem.Checked = Theme.Dark;
             if (_limitItem != null) _limitItem.Checked = E.Doc != null && E.Doc.LimitPalette;
             if (_onionItem != null) _onionItem.Checked = E.OnionSkin;
+            if (_linkZoomItem != null) _linkZoomItem.Checked = _linkZoom;
+            if (_stopCompareItem != null) _stopCompareItem.Enabled = E.Comparing;
+            if (_compareMenu != null)
+            {
+                _compareMenu.DropDownItems.Clear();
+                foreach (var o in E.Sessions.Where(x => x != E.S))
+                {
+                    var other = o;
+                    _compareMenu.DropDownItems.Add(other.TabName, null, (a, b) => E.StartCompare(E.S, other));
+                }
+                _compareMenu.Enabled = _compareMenu.DropDownItems.Count > 0;
+                if (!_compareMenu.Enabled) _compareMenu.ToolTipText = "Open another sprite in a tab first.";
+            }
         }
 
         void FillRecent()
@@ -356,7 +431,7 @@ FILE
             foreach (var p in E.Settings.Recent.Where(File.Exists))
             {
                 var path = p;
-                _recentMenu.DropDownItems.Add(path, null, (s, a) => { if (ConfirmDiscard()) OpenFile(path); });
+                _recentMenu.DropDownItems.Add(path, null, (s, a) => OpenFile(path));
             }
             _recentMenu.Enabled = _recentMenu.DropDownItems.Count > 0;
         }
@@ -368,7 +443,7 @@ FILE
             foreach (var kv in _toolButtons) kv.Value.Image = Icons.Get(kv.Value.Text == "Recolour" ? "Recolor" : kv.Value.Text);
             if (_mirrorBtn != null) _mirrorBtn.Image = Icons.Get("Mirror");
             _dirs.ApplyTheme(); _layers.ApplyTheme(); _colors.ApplyTheme();
-            _canvas.Invalidate(); _frames.Invalidate(true);
+            InvalidateCanvases(); _frames.Invalidate(true);
             UpdateMenus();
         }
 
@@ -376,6 +451,8 @@ FILE
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (keyData == (Keys.Control | Keys.Tab)) { NextTab(1); return true; }
+            if (keyData == (Keys.Control | Keys.Shift | Keys.Tab)) { NextTab(-1); return true; }
             var focused = ActiveControlDeep(this);
             bool typing = focused is TextBoxBase || focused is NumericUpDown || focused is ComboBox || focused is UpDownBase;
             if (!typing)
@@ -394,14 +471,14 @@ FILE
                     case Keys.X: E.SwapColors(); return true;
                     case Keys.S: _mirrorBtn.Checked = !_mirrorBtn.Checked; return true;
                 }
-                if (focused == _canvas || focused == null || focused is ListBox)
+                if (focused is SpriteCanvas || focused == null || focused is ListBox)
                 {
                     switch (keyData)
                     {
-                        case Keys.Left: _canvas.Nudge(-1, 0); return true;
-                        case Keys.Right: _canvas.Nudge(1, 0); return true;
-                        case Keys.Up: if (focused is ListBox) break; _canvas.Nudge(0, -1); return true;
-                        case Keys.Down: if (focused is ListBox) break; _canvas.Nudge(0, 1); return true;
+                        case Keys.Left: ActiveCanvas.Nudge(-1, 0); return true;
+                        case Keys.Right: ActiveCanvas.Nudge(1, 0); return true;
+                        case Keys.Up: if (focused is ListBox) break; ActiveCanvas.Nudge(0, -1); return true;
+                        case Keys.Down: if (focused is ListBox) break; ActiveCanvas.Nudge(0, 1); return true;
                     }
                 }
             }
@@ -432,33 +509,103 @@ FILE
             SetDoc(d);
         }
 
+        /// <summary>Opens a sprite in a new tab (an untouched blank tab is replaced).</summary>
         void SetDoc(SpriteDocument d)
         {
-            E.SetDocument(d);
+            var blank = E.Sessions.Count == 1 && IsUntouchedBlank(E.Sessions[0]) ? E.Sessions[0] : null;
+            E.OpenTab(d);
+            if (blank != null) E.CloseTab(blank);
             _frames.Visible = d.FrameCount > 1;
             if (d.Layers.Count > 0)
             {
                 // start with the top paint layer selected so drawing goes on top
                 E.SelectLayer(d.Layers.Count - 1);
             }
-            _canvas.FitToWindow();
             UpdateTitle();
             // sensible first colours for the style
             if (d.Style.Palette.Length > 1) { E.SetPrimary(d.Style.Palette.OrderBy(c => PixelImage.Luma(c)).First()); E.SetSecondary(d.Style.Palette.OrderByDescending(c => PixelImage.Luma(c)).First()); }
         }
 
-        bool ConfirmDiscard()
+        static bool IsUntouchedBlank(Session s)
         {
-            if (E.Doc == null || !E.Root.AnyDirty) return true;
-            var r = MessageBox.Show(this, "Save changes to " + E.Doc.Title.TrimEnd(' ', '*') + "?", AppName, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+            return s.Root.FilePath == null && !s.Root.AnyDirty && s.Root.Overworld == null && !s.Root.UsedColors().Any();
+        }
+
+        /// <summary>Asks to save a tab's sprite if it has changes. False = cancel.</summary>
+        bool ConfirmDiscard(Session s)
+        {
+            if (s == null || !s.Root.AnyDirty) return true;
+            if (s != E.S) E.PickTab(s);
+            var r = MessageBox.Show(this, "Save changes to " + s.TabName.TrimEnd(' ', '*') + "?", AppName, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
             if (r == DialogResult.Cancel) return false;
             if (r == DialogResult.Yes) return Save(false);
             return true;
         }
 
+        void CloseTab(Session s)
+        {
+            if (s == null || !ConfirmDiscard(s)) return;
+            bool last = E.Sessions.Count == 1;
+            if (last) NewBlank(s.Root.Style, SpriteKind.Front);   // always keep one tab open
+            E.CloseTab(s);
+        }
+
+        void NextTab(int dir)
+        {
+            if (E.Sessions.Count < 2) return;
+            int i = E.Sessions.IndexOf(E.S);
+            E.PickTab(E.Sessions[(i + dir + E.Sessions.Count) % E.Sessions.Count]);
+        }
+
+        // ------------------------------------------------------------------ comparing two tabs
+
+        SpriteCanvas ActiveCanvas { get { return ActiveView.Canvas; } }
+
+        CanvasView ActiveView
+        {
+            get { return !E.Comparing ? _single : E.S == E.CompareRight ? _right : _left; }
+        }
+
+        void InvalidateCanvases() { _single.Canvas.Invalidate(); _left.Canvas.Invalidate(); _right.Canvas.Invalidate(); }
+
+        void ShowCompare()
+        {
+            if (E.Comparing)
+            {
+                _left.Canvas.Bound = E.CompareLeft;
+                _right.Canvas.Bound = E.CompareRight;
+                _single.Visible = false;
+                _split.Visible = true;
+                _split.SplitterDistance = Math.Max(100, _split.Width / 2);
+                foreach (var v in new[] { _left, _right }) { v.Canvas.Bound.NeedsFit = true; v.Canvas.FitToWindow(); v.UpdateHeader(); v.SyncBars(); }
+                E.Say("Comparing \"" + E.CompareLeft.TabName.TrimEnd(' ', '*') + "\" and \"" + E.CompareRight.TabName.TrimEnd(' ', '*') + "\" side by side. Click either one to edit it. View > Stop comparing (or the button above) to go back to one.");
+            }
+            else
+            {
+                _left.Canvas.Bound = _right.Canvas.Bound = null;
+                _split.Visible = false;
+                _single.Visible = true;
+                if (E.S != null) E.S.NeedsFit = true;
+                _single.Canvas.FitToWindow();
+                _single.SyncBars();
+                if (E.S != null) E.Say("Stopped comparing. Editing \"" + E.S.TabName.TrimEnd(' ', '*') + "\".");
+            }
+            UpdateMenus();
+            InvalidateCanvases();
+        }
+
+        /// <summary>While comparing, the other side follows the zoom (so both are seen at the same size).</summary>
+        void LinkZoom(CanvasView from)
+        {
+            if (!_linkZoom || !E.Comparing || _zoomSyncing || (from != _left && from != _right)) return;
+            var other = from == _left ? _right : _left;
+            _zoomSyncing = true;
+            try { other.Canvas.SetZoom(from.Canvas.Zoom); }
+            finally { _zoomSyncing = false; }
+        }
+
         void NewSprite(string picture = null)
         {
-            if (!ConfirmDiscard()) return;
             using (var d = new NewSpriteDialog(E.Settings, picture))
             {
                 if (d.ShowDialog(this) != DialogResult.OK || d.Result == null) return;
@@ -495,13 +642,15 @@ FILE
 
         void Open()
         {
-            if (!ConfirmDiscard()) return;
             using (var ofd = new OpenFileDialog { Filter = "Sprite (*" + SpriteDocument.Extension + ")|*" + SpriteDocument.Extension + "|All files|*.*" })
                 if (ofd.ShowDialog(this) == DialogResult.OK) OpenFile(ofd.FileName);
         }
 
         public void OpenFile(string path)
         {
+            // already open? go to its tab
+            var open = E.Sessions.FirstOrDefault(x => x.Root.FilePath != null && string.Equals(Path.GetFullPath(x.Root.FilePath), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase));
+            if (open != null) { E.PickTab(open); E.Say("That sprite is already open."); return; }
             try
             {
                 var d = SpriteDocument.Load(path);
@@ -570,7 +719,8 @@ FILE
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            if (!ConfirmDiscard()) { e.Cancel = true; return; }
+            foreach (var s in E.Sessions.ToList())
+                if (!ConfirmDiscard(s)) { e.Cancel = true; return; }
             _frames.Stop();
             _dirs.Stop();
             E.Settings.Save();

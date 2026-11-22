@@ -14,22 +14,33 @@ namespace PokeSpriteCreator.UI
     /// </summary>
     public class Editor
     {
-        /// <summary>The part being edited: the sprite itself, or a front sprite's walking sprites (Doc.Root is the file).</summary>
-        public SpriteDocument Doc;
+        /// <summary>The open tabs, and the one being edited.</summary>
+        public readonly List<Session> Sessions = new List<Session>();
+        public Session S;
+        /// <summary>Two tabs shown side by side (null when not comparing).</summary>
+        public Session CompareLeft, CompareRight;
+
+        /// <summary>The part being edited in the active tab: the sprite itself, or a front sprite's walking sprites (Doc.Root is the file).</summary>
+        public SpriteDocument Doc { get { return S == null ? null : S.Doc; } set { S.Doc = value; } }
         public Settings Settings;
-        public int LayerIndex = -1;
-        public int Frame;
+        public int LayerIndex { get { return S == null ? -1 : S.LayerIndex; } set { S.LayerIndex = value; } }
+        public int Frame { get { return S == null ? 0 : S.Frame; } set { S.Frame = value; } }
         public int Primary = unchecked((int)0xFF000000), Secondary = unchecked((int)0xFFFFFFFF);
         public Tool Tool = Tool.Pencil;
         public bool Mirror, SampleMerged = true, OnionSkin;
         public PixelImage FrameClipboard;
 
-        List<DocState> _undo = new List<DocState>(), _redo = new List<DocState>();
-        readonly Dictionary<SpriteDocument, List<DocState>[]> _history = new Dictionary<SpriteDocument, List<DocState>[]>();
+        // the active tab's state
+        List<DocState> _undo { get { return S.Undo; } set { S.Undo = value; } }
+        List<DocState> _redo { get { return S.Redo; } set { S.Redo = value; } }
+        Dictionary<SpriteDocument, List<DocState>[]> _history { get { return S.History; } }
         // the frame as it was when it was picked, for "copy my change"
-        PixelImage _baseline; Layer _baseLayer; int _baseFrame = -1;
-        string _lastKey; DateTime _lastTime;
-        List<PixelImage> _preview;
+        PixelImage _baseline { get { return S == null ? null : S.Baseline; } set { if (S != null) S.Baseline = value; } }
+        Layer _baseLayer { get { return S == null ? null : S.BaseLayer; } set { if (S != null) S.BaseLayer = value; } }
+        int _baseFrame { get { return S == null ? -1 : S.BaseFrame; } set { if (S != null) S.BaseFrame = value; } }
+        string _lastKey { get { return S == null ? null : S.LastKey; } set { if (S != null) S.LastKey = value; } }
+        DateTime _lastTime { get { return S == null ? DateTime.MinValue : S.LastTime; } set { if (S != null) S.LastTime = value; } }
+        List<PixelImage> _preview { get { return S == null ? null : S.PreviewCache; } set { if (S != null) S.PreviewCache = value; } }
 
         /// <summary>Pixels / colours changed (redraw).</summary>
         public event Action DocChanged;
@@ -41,8 +52,12 @@ namespace PokeSpriteCreator.UI
         public event Action ToolChanged;
         /// <summary>The document was saved.</summary>
         public event Action Saved;
-        /// <summary>Switched between the sprite and its walking sprites.</summary>
+        /// <summary>Switched between the sprite and its walking sprites (or to another tab).</summary>
         public event Action PartSwitched;
+        /// <summary>Tabs opened, closed, switched or renamed.</summary>
+        public event Action TabsChanged;
+        /// <summary>Started or stopped comparing two tabs.</summary>
+        public event Action CompareChanged;
         public event Action<string> Status;
 
         public Editor(Settings s) { Settings = s; }
@@ -53,8 +68,88 @@ namespace PokeSpriteCreator.UI
 
         public SpriteDocument Root { get { return Doc == null ? null : Doc.Root; } }
 
+        // ------------------------------------------------------------------ tabs
+
+        /// <summary>Opens a sprite in a new tab and makes it the active one.</summary>
+        public Session OpenTab(SpriteDocument d)
+        {
+            var s = new Session(d);
+            int at = S == null ? Sessions.Count : Sessions.IndexOf(S) + 1;
+            Sessions.Insert(Math.Max(0, Math.Min(Sessions.Count, at)), s);
+            Activate(s);
+            return s;
+        }
+
+        /// <summary>Makes a tab the one being edited (all panels switch to it).</summary>
+        public void Activate(Session s)
+        {
+            if (s == null || !Sessions.Contains(s)) return;
+            bool same = s == S;
+            S = s;
+            if (Frame >= Doc.FrameCount) Frame = 0;
+            if (LayerIndex >= Doc.Layers.Count) LayerIndex = Doc.Layers.Count - 1;
+            if (!same || _baseline == null) CaptureBaseline();
+            if (LayersChanged != null) LayersChanged();
+            if (FrameChanged != null) FrameChanged();
+            if (SelectionChanged != null) SelectionChanged();
+            if (DocChanged != null) DocChanged();
+            if (PartSwitched != null) PartSwitched();
+            if (TabsChanged != null) TabsChanged();
+        }
+
+        /// <summary>Closes a tab (asking to save is up to the caller). Another tab becomes active.</summary>
+        public void CloseTab(Session s)
+        {
+            int i = Sessions.IndexOf(s);
+            if (i < 0) return;
+            if (s == CompareLeft || s == CompareRight) StopCompare();
+            Sessions.RemoveAt(i);
+            if (s == S)
+            {
+                S = null;
+                if (Sessions.Count > 0) { Activate(Sessions[Math.Min(i, Sessions.Count - 1)]); return; }
+            }
+            if (TabsChanged != null) TabsChanged();
+        }
+
+        public void NotifyTabs() { if (TabsChanged != null) TabsChanged(); }
+
+        public bool Comparing { get { return CompareLeft != null && CompareRight != null; } }
+
+        /// <summary>Shows two tabs side by side. Both can be edited: clicking one makes it the active tab.</summary>
+        public void StartCompare(Session left, Session right)
+        {
+            if (left == null || right == null || left == right) return;
+            CompareLeft = left; CompareRight = right;
+            if (S != left && S != right) Activate(left);
+            if (CompareChanged != null) CompareChanged();
+            if (TabsChanged != null) TabsChanged();
+        }
+
+        public void StopCompare()
+        {
+            if (!Comparing) return;
+            CompareLeft = CompareRight = null;
+            if (CompareChanged != null) CompareChanged();
+            if (TabsChanged != null) TabsChanged();
+        }
+
+        /// <summary>
+        /// A tab was picked in the tab bar. While comparing, a tab that isn't shown replaces the side being edited.
+        /// </summary>
+        public void PickTab(Session s)
+        {
+            if (Comparing && s != CompareLeft && s != CompareRight)
+            {
+                if (S == CompareRight) CompareRight = s; else CompareLeft = s;
+                if (CompareChanged != null) CompareChanged();
+            }
+            Activate(s);
+        }
+
         public void SetDocument(SpriteDocument d)
         {
+            if (S == null) { OpenTab(d); return; }
             Doc = d;
             _history.Clear();
             _undo = new List<DocState>(); _redo = new List<DocState>(); _lastKey = null;
@@ -68,6 +163,7 @@ namespace PokeSpriteCreator.UI
             if (SelectionChanged != null) SelectionChanged();
             if (DocChanged != null) DocChanged();
             if (PartSwitched != null) PartSwitched();
+            if (TabsChanged != null) TabsChanged();
         }
 
         /// <summary>Edit another part of the same file (the sprite or its walking sprites); each keeps its own Undo.</summary>
@@ -79,6 +175,7 @@ namespace PokeSpriteCreator.UI
             List<DocState>[] h;
             if (!_history.TryGetValue(d, out h)) _history[d] = h = new[] { new List<DocState>(), new List<DocState>() };
             _undo = h[0]; _redo = h[1]; _lastKey = null;
+            S.NeedsFit = true;                                   // the sprite and its walking sprites have different sizes
             Frame = Math.Max(0, Math.Min(d.FrameCount - 1, frame));
             LayerIndex = d.Layers.Count - 1;
             _preview = null;
@@ -88,9 +185,10 @@ namespace PokeSpriteCreator.UI
             if (SelectionChanged != null) SelectionChanged();
             if (DocChanged != null) DocChanged();
             if (PartSwitched != null) PartSwitched();
+            if (TabsChanged != null) TabsChanged();
         }
 
-        public void NotifySaved() { if (Saved != null) Saved(); }
+        public void NotifySaved() { if (Saved != null) Saved(); if (TabsChanged != null) TabsChanged(); }
 
         /// <summary>The walking sprites were added or replaced (tells the panels).</summary>
         public void PartsChanged() { if (PartSwitched != null) PartSwitched(); }

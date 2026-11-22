@@ -184,6 +184,44 @@ namespace PokeSpriteCreator
             Check(ow.Layers[0].Frames[8].Get(31 - 12, 22) == PixelImage.Rgb(255, 0, 255), "a change on a left frame lands mirrored on the right frame");
             Check(es.PendingChange != null && es.PendingChange.IsEmpty, "after copying, the frame has no pending change");
 
+            // ---- tabs and comparing
+            var et = new Editor(new Settings());
+            var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));
+            var docB = new SpriteDocument(GenStyle.Get(3), SpriteKind.Front, null, GenStyle.Get(3).DefaultLayout(SpriteKind.Front)); docB.Layers.Add(docB.NewLayer("Paint"));
+            var tabA = et.OpenTab(docA);
+            et.BeginChange(); et.Current.Frames[0].Set(1, 1, PixelImage.Rgb(1, 1, 1)); et.Changed();
+            var tabB = et.OpenTab(docB);
+            Check(et.Sessions.Count == 2 && et.S == tabB && et.Doc == docB && !et.CanUndo, "a new tab has its own sprite and undo");
+            et.Activate(tabA);
+            Check(et.Doc == docA && et.CanUndo, "switching back keeps the first tab's undo");
+            et.StartCompare(tabA, tabB);
+            Check(et.Comparing && et.CompareLeft == tabA && et.CompareRight == tabB && et.S == tabA, "two tabs side by side");
+            et.Activate(tabB);
+            Check(et.Comparing && et.Doc == docB, "both sides can be edited");
+            var docC = new SpriteDocument(g5, SpriteKind.Back, null, g5.DefaultLayout(SpriteKind.Back)); docC.Layers.Add(docC.NewLayer("Paint"));
+            var tabC = et.OpenTab(docC);
+            Check(et.Sessions.Count == 3 && et.Comparing, "opening a tab while comparing keeps the comparison");
+            et.PickTab(tabB); et.PickTab(tabC);
+            Check(et.CompareRight == tabC && et.CompareLeft == tabA, "picking another tab swaps it into the side being edited");
+            et.StopCompare();
+            Check(!et.Comparing && et.S == tabC, "stop comparing");
+            et.StartCompare(tabA, tabB);
+            et.CloseTab(tabB);
+            Check(!et.Comparing && et.Sessions.Count == 2 && !et.Sessions.Contains(tabB), "closing a compared tab stops comparing");
+
+            // scrolling: a zoomed frame bigger than the view scrolls, and the scroll stays inside the picture
+            var cv = new SpriteCanvas(et) { Bound = tabA, Size = new Size(200, 150) };
+            tabA.NeedsFit = false;
+            cv.SetZoom(16);
+            var content = cv.ContentSize;
+            Check(content.Width == 80 * 16 + 2 * SpriteCanvas.ViewMargin, "content size = zoomed frame + margin");
+            cv.SetScroll(99999, 99999);
+            Check(cv.ScrollX == content.Width - 200 && cv.ScrollY == content.Height - 150, "scroll stops at the edge (" + cv.ScrollX + "," + cv.ScrollY + ")");
+            cv.SetScroll(-50, -50);
+            Check(cv.ScrollX == 0 && cv.ScrollY == 0, "scroll stops at the start");
+            cv.FitToWindow();
+            Check(cv.ContentSize.Width - 2 * SpriteCanvas.ViewMargin <= 200 && cv.ScrollX == 0, "fit to window shows the whole frame");
+
             // ---- shapes
             Check(SpriteCanvas.LinePoints(new Point(0, 0), new Point(5, 2)).Count() == 6, "line");
             Check(SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), true).Count() > SpriteCanvas.EllipsePoints(new Point(0, 0), new Point(9, 9), false).Count(), "ellipse filled > outline");
