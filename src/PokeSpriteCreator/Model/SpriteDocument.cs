@@ -43,6 +43,8 @@ namespace PokeSpriteCreator.Model
         public bool LimitPalette = true;
         /// <summary>The sprite's colours in the order they were first used (see ColorTools.ReduceTogether).</summary>
         public readonly List<int> ColorOrder = new List<int>();
+        /// <summary>Reference pictures kept with the sprite (not part of the picture itself).</summary>
+        public readonly List<RefPicture> References = new List<RefPicture>();
         /// <summary>After the colour limit was applied: each colour over the limit -> the colour it's shown as.</summary>
         public Dictionary<int, int> LastMerged = new Dictionary<int, int>();
         public string FilePath;
@@ -224,6 +226,8 @@ namespace PokeSpriteCreator.Model
             o["frameWidth"] = Layout.FrameW; o["frameHeight"] = Layout.FrameH;
             o["columns"] = Layout.Cols; o["rows"] = Layout.Rows;
             o["limitPalette"] = LimitPalette;
+            if (References.Count > 0)
+                o["references"] = References.Select(r => { var j = new JsonObject(); j["name"] = r.Name; j["picture"] = Convert.ToBase64String(r.Image.ToPngBytes()); return (object)j; }).ToList();
             if (ColorOrder.Count > 0) o["colorOrder"] = ColorOrder.Select(c => (object)PixelImage.Hex(c)).ToList();
             var arr = new List<object>();
             foreach (var l in Layers)
@@ -265,6 +269,11 @@ namespace PokeSpriteCreator.Model
             var d = new SpriteDocument(style, kind, o.GetString("sheet", "Walk"), lay);
             d.Name = o.GetString("name", "NEWTRAINER");
             d.LimitPalette = o.GetBool("limitPalette", true);
+            foreach (var r in (o.GetArray("references") ?? new List<object>()).OfType<JsonObject>())
+            {
+                try { d.References.Add(new RefPicture { Name = r.GetString("name", "Reference"), Image = PixelImage.FromPngBytes(Convert.FromBase64String(r.GetString("picture"))) }); }
+                catch { d.Warnings.Add("A reference picture couldn't be read and was left out."); }
+            }
             foreach (var h in (o.GetArray("colorOrder") ?? new List<object>()).OfType<string>())
             {
                 try { d.ColorOrder.Add(PixelImage.ParseHex(h)); } catch { }

@@ -462,6 +462,94 @@ namespace PokeSpriteCreator
                 Check(restSame, "only black pixels change (skin, trousers and Pokeball left alone)");
             }
 
+            // ---- from a reference picture: a made-up "photo" of brown curly hair over a face on a light wall
+            {
+                var rnd = new Random(7);
+                var photo = new PixelImage(120, 140);
+                for (int y = 0; y < photo.H; y++)
+                    for (int x = 0; x < photo.W; x++)
+                    {
+                        int c = PixelImage.Rgb(222, 222, 228);                                       // wall
+                        double fx = (x - 60) / 30.0, fy = (y - 85) / 38.0;
+                        if (fx * fx + fy * fy < 1) c = PixelImage.Rgb(232, 186, 160);                // face
+                        double hx = (x - 60) / 40.0, hy = (y - 52) / 26.0;
+                        if (hx * hx + hy * hy < 1 && y < 70 + (int)(4 * Math.Sin(x / 3.0)))            // hair with a wavy fringe
+                        {
+                            int k = rnd.Next(10);
+                            c = k < 2 ? PixelImage.Rgb(40, 28, 24) : k < 8 ? PixelImage.Rgb(74, 54, 46) : PixelImage.Rgb(125, 92, 76);
+                        }
+                        photo.Set(x, y, c);
+                    }
+                var refPic = new RefPicture { Name = "curls", Image = photo };
+                Func<int, int> hx2 = v => PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+                var spr = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front));
+                spr.Layers.Add(spr.NewLayer("Picture"));
+                var face = spr.Layers[0].Frames[0];
+                foreach (var v in new[] { 0x000000, 0x292929, 0x634A42, 0xAD8473, 0x5A5A6B })
+                    face.Set(1 + Array.IndexOf(new[] { 0x000000, 0x292929, 0x634A42, 0xAD8473, 0x5A5A6B }, v), 79, hx2(v));   // palette pixels
+                for (int y = 30; y < 45; y++) for (int x = 33; x < 45; x++) face.Set(x, y, hx2(0xFFD6BD));               // a bald head
+                var srcBox = new Rectangle(15, 22, 90, 58);
+                var cl = RefConvert.Clusters(photo, srcBox, "curly hair");
+                Check(cl.Any(c => c.Keep && PixelImage.Luma(c.Color) < 0.4) && cl.Where(c => PixelImage.Luma(c.Color) > 0.8).All(c => !c.Keep) && cl.Where(c => PixelImage.R(c.Color) > 200 && PixelImage.G(c.Color) > 150 && PixelImage.G(c.Color) < 210).All(c => !c.Keep),
+                      "picture: keeps the hair's colours, leaves out the wall and (for hair) the skin: " + string.Join(", ", cl.Select(c => PixelImage.Hex(c.Color) + (c.Keep ? "" : " out")).ToArray()));
+                var dstBox = new Rectangle(30, 20, 18, 12);
+                var rr = RefConvert.Convert(photo, srcBox, cl, spr.Composite(0), dstBox, spr.UsedColors(), "curly hair", new RefOptions());
+                var rb = rr.Overlay.Bounds();
+                Check(!rr.Empty && Rectangle.Inflate(dstBox, 1, 1).Contains(rb), "picture: the pixel version fits the box on the sprite (" + rb + " in " + dstBox + ")");
+                Check(rr.Overlay.Colors().IsSubsetOf(new HashSet<int>(spr.UsedColors())), "picture: made only from the sprite's own colours: " + string.Join(", ", rr.Overlay.Colors().Select(PixelImage.Hex).ToArray()));
+                Check(!rr.Overlay.Colors().Contains(hx2(0xFFD6BD)), "picture: no skin colour in the hair");
+                Check(rr.Tones.Contains(hx2(0x634A42)) && rr.Tones.Contains(hx2(0x292929)), "picture: brown hair uses the sprite's browns (" + string.Join(", ", rr.Tones.Select(PixelImage.Hex).ToArray()) + ")");
+                bool sits = false; for (int x = dstBox.Left; x < dstBox.Right; x++) if (rr.Overlay.Get(x, dstBox.Bottom - 1) != 0) sits = true;
+                Check(sits, "picture: sits on the bottom edge of the box");
+                var rr2 = RefConvert.Convert(photo, srcBox, cl, spr.Composite(0), dstBox, spr.UsedColors(), "curly hair", new RefOptions { Variation = 1 });
+                Check(!rr2.Empty && !rr2.Overlay.Px.SequenceEqual(rr.Overlay.Px), "picture: Redo gives a different take");
+                // through the editor: Confirm adds a layer (undoable), Cancel adds nothing
+                var er = new Editor(new Settings());
+                er.OpenTab(spr);
+                spr.References.Add(refPic);
+                er.SetRefPicture(refPic); er.SetRefDescription("curly hair"); er.SetRefSource(srcBox); er.SetRefTarget(dstBox);
+                Check(er.RefResult != null && !er.RefResult.Empty, "picture: the editor shows a result once both boxes are set");
+                int layersBefore = spr.Layers.Count;
+                er.CancelRef();
+                Check(spr.Layers.Count == layersBefore && er.RefResult == null, "picture: Cancel adds nothing");
+                er.SetRefTarget(dstBox); er.RedoRef();
+                Check(er.RefOptions.Variation == 1, "picture: Redo moves to the next take");
+                er.ConfirmRef();
+                Check(spr.Layers.Count == layersBefore + 1 && spr.Layers.Last().Name == "Curly hair" && spr.Layers.Last().Frames[0].Px.Any(c => c != 0), "picture: Confirm adds it as a new \"Curly hair\" layer on top");
+                er.Undo();
+                Check(spr.Layers.Count == layersBefore, "picture: Undo takes the layer off again");
+                var refFile = Path.Combine(dir, "with_reference.psc");
+                spr.Save(refFile);
+                var back2 = SpriteDocument.Load(refFile);
+                Check(back2.References.Count == 1 && back2.References[0].Name == "curls" && back2.References[0].Image.W == 120 && back2.Layers.Count == spr.Layers.Count, "picture: the reference picture is saved with the sprite, separate from its layers");
+            }
+
+            // ---- local check only: PSC_REF_PHOTO / PSC_REF_SPRITE / PSC_REF_SRC (x,y,w,h) / PSC_REF_DST / PSC_REF_DESC
+            var refPhoto = Environment.GetEnvironmentVariable("PSC_REF_PHOTO");
+            if (!string.IsNullOrEmpty(refPhoto))
+            {
+                Func<string, Rectangle> rect = sv => { var a2 = sv.Split(',').Select(int.Parse).ToArray(); return new Rectangle(a2[0], a2[1], a2[2], a2[3]); };
+                var rp = RefPicture.FromFile(refPhoto);
+                var rdoc = SpriteDocument.Load(Environment.GetEnvironmentVariable("PSC_REF_SPRITE"));
+                var rsrc = rect(Environment.GetEnvironmentVariable("PSC_REF_SRC"));
+                double kk = rp.Image.W / (double)PixelImage.Load(refPhoto).W;
+                rsrc = new Rectangle((int)(rsrc.X * kk), (int)(rsrc.Y * kk), (int)(rsrc.Width * kk), (int)(rsrc.Height * kk));
+                var rdesc = Environment.GetEnvironmentVariable("PSC_REF_DESC") ?? "";
+                var rcl = RefConvert.Clusters(rp.Image, rsrc, rdesc);
+                var rcomp = rdoc.Composite(0);
+                var log = new List<string>();
+                foreach (var c in rcl) log.Add("cluster " + PixelImage.Hex(c.Color) + " n=" + c.Count + " edge=" + c.BorderShare.ToString("0.00") + " keep=" + c.Keep);
+                for (int vv = 0; vv < 3; vv++)
+                {
+                    var rr = RefConvert.Convert(rp.Image, rsrc, rcl, rcomp, rect(Environment.GetEnvironmentVariable("PSC_REF_DST")), rdoc.UsedColors(), rdesc, new RefOptions { Variation = vv });
+                    var outImg = rcomp.Clone(); 
+                    for (int i = 0; i < outImg.Px.Length; i++) if (rr.Overlay.Px[i] != 0) outImg.Px[i] = rr.Overlay.Px[i];
+                    outImg.Scale(6).Save(Path.Combine(dir, "ref_try" + vv + ".png"));
+                    log.Add("try " + vv + ": " + string.Join(" | ", rr.Notes.ToArray()));
+                }
+                File.WriteAllText(Path.Combine(dir, "ref_log.txt"), string.Join("\r\n", log.ToArray()));
+            }
+
             // ---- tabs and comparing
             var et = new Editor(new Settings());
             var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));

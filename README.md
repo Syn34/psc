@@ -64,6 +64,30 @@ The panel shows the part now and suggested, the colours used (outline, under, sh
 what it changes and why (no outline, shaded on both sides, highlight too wide, too many shades…). The suggestion is also
 drawn on the canvas. **Apply** (Enter) puts it on the selected layer; Ctrl+Z takes it off; Esc clears the box.
 
+## From a picture
+
+The framed-picture button in the toolbar (P) turns part of a reference picture into sprite pixels. A photo is fine (a
+hairstyle, a cap, a jacket).
+
+1. **Load…** a reference picture in the right-hand panel. It's kept with the sprite (saved in the `.psc`), separate from
+   its layers. A sprite can keep several; pick one from the list, or **Remove** it.
+2. **Drag a box around the part you want** in the picture (e.g. the hair).
+3. **Say what it is** ("curly hair", "cap"). It names the new layer, and with hair words skin and very light colours in
+   the box are left out. The colours found in your box are shown under it: click one to leave it out or put it back
+   (left-out parts are faded on the picture).
+4. **Drag a box on the sprite** where it should go.
+
+It's trimmed to what you kept, shrunk to fit your box (sitting on its bottom edge), recoloured with **your sprite's own
+shades** given out by how light each bit of the photo is (so its light and shade carry over, and no colours are added),
+tidied from photo noise into clumps, and outlined where it meets the background. It shows on the sprite and in the panel:
+
+- **Confirm** (Enter) adds it as a new layer on top (Ctrl+Z undoes it).
+- **Redo** tries another take (a slightly different size, position, cut-out and shading).
+- **Cancel** (Esc) throws it away.
+
+Untick *Only colours already in the sprite* to use four shades from the photo instead. For the finishing touches use the
+Shading helper and the pencil.
+
 ## Walking sprites (In-game sprites panel)
 
 A trainer front sprite's walking sprites are a 4 × 4 sheet (rows Down, Left, Right, Up; the walking steps across), the
@@ -123,12 +147,13 @@ layers become paint layers.
 The source is C# 5 for .NET Framework 4.8 with WinForms, no NuGet packages.
 
 `PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and walking sheet and checks picture import, editing,
-colour limits, saving (with walking sprites), exporting, copying changes between frames, tabs, comparing and scrolling, the colour limit, and the shading helper (on a leg like the one
+colour limits, saving (with walking sprites), exporting, copying changes between frames, tabs, comparing and scrolling, the colour limit, the shading helper, and turning a (made-up) photo into sprite pixels with Confirm / Redo /
+Cancel and the reference saved in the file; and the shading helper (on a leg like the one
 in Mike's screenshot).
 
 ## Keyboard shortcuts
 
-B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour · H shading helper ·
+B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour · H shading helper · P from a picture ·
 X swap colours · S mirror · Alt+click pick colour · Shift = filled shape / straight line ·
 arrows nudge the layer · wheel / Shift+wheel scroll · Ctrl+wheel zoom · middle-drag pan · Ctrl+Tab next tab · Ctrl+W close tab · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
 Ctrl+I import picture · Ctrl+S save · Ctrl+E export · Ctrl+Shift+W / Ctrl+Shift+D copy my change to its walking steps / all directions

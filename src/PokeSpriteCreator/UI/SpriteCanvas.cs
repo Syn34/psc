@@ -41,6 +41,7 @@ namespace PokeSpriteCreator.UI
             E.SelectionChanged += Invalidate;
             E.ToolChanged += () => { UpdateCursor(); Invalidate(); };
             E.ShadeChanged += Invalidate;
+            E.RefChanged += Invalidate;
             E.PartSwitched += () =>
             {
                 if (S != null && S.NeedsFit && Width > 40 && Height > 40) FitToWindow();
@@ -200,6 +201,19 @@ namespace PokeSpriteCreator.UI
             }
             using (var p = new Pen(Theme.Border)) g.DrawRectangle(p, r.X - 1, r.Y - 1, r.Width + 1, r.Height + 1);
 
+            // from a reference picture: the result drawn over the sprite, and the box
+            if (E.Tool == Tool.Reference && S == E.S)
+            {
+                if (E.RefResult != null && !E.RefResult.Empty) Pix.Draw(g, E.RefResult.Overlay, r);
+                Rectangle? box = _shadeDrag ?? E.RefTarget;
+                if (box.HasValue)
+                {
+                    var b = box.Value;
+                    var sr = new Rectangle(r.X + b.X * Zoom, r.Y + b.Y * Zoom, b.Width * Zoom - 1, b.Height * Zoom - 1);
+                    using (var p1 = new Pen(Color.White, 1)) g.DrawRectangle(p1, sr);
+                    using (var p2 = new Pen(Color.FromArgb(40, 120, 220), 1) { DashStyle = DashStyle.Dash }) g.DrawRectangle(p2, sr);
+                }
+            }
             // shading helper: the suggestion drawn over the sprite, and the box
             if (E.Tool == Tool.Shade && S == E.S)
             {
@@ -308,6 +322,7 @@ namespace PokeSpriteCreator.UI
                     _down = false;
                     break;
                 case Tool.Shade:
+                case Tool.Reference:
                     _shadeDrag = Box(p, p);
                     break;
             }
@@ -355,6 +370,7 @@ namespace PokeSpriteCreator.UI
                     if (_target != null && p != _last) { _last = p; DrawShape(p, color); }
                     break;
                 case Tool.Shade:
+                case Tool.Reference:
                     if (p != _last) { _last = p; _shadeDrag = Box(_start, p); Invalidate(); }
                     break;
                 case Tool.Move:
@@ -375,6 +391,15 @@ namespace PokeSpriteCreator.UI
         protected override void OnMouseUp(MouseEventArgs e)
         {
             if (_panning) { _panning = false; UpdateCursor(); return; }
+            if (_down && E.Tool == Tool.Reference)
+            {
+                _down = false; Capture = false;
+                var box = _shadeDrag; _shadeDrag = null;
+                if (box.HasValue && (box.Value.Width < 2 || box.Value.Height < 2)) E.Say("Drag a box on the sprite where it should go (a click isn't enough).");
+                else if (box.HasValue) E.SetRefTarget(box);
+                Invalidate();
+                return;
+            }
             if (_down && E.Tool == Tool.Shade)
             {
                 _down = false; Capture = false;

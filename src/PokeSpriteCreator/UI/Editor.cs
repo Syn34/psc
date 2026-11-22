@@ -6,7 +6,7 @@ using PokeSpriteCreator.Model;
 
 namespace PokeSpriteCreator.UI
 {
-    public enum Tool { Pencil, Eraser, Fill, Picker, Line, Rectangle, Ellipse, Move, Recolor, Shade }
+    public enum Tool { Pencil, Eraser, Fill, Picker, Line, Rectangle, Ellipse, Move, Recolor, Shade, Reference }
 
     /// <summary>
     /// The editing session shared by all panels: the document, the selected layer and frame,
@@ -360,6 +360,87 @@ namespace PokeSpriteCreator.UI
                 else Shade = ShadingHelper.Suggest(layer.Frames[Frame], Doc.Composite(Frame), ShadeArea.Value, Doc.UsedColors(), ShadeOptions);
             }
             if (ShadeChanged != null) ShadeChanged();
+        }
+
+        // ------------------------------------------------------------------ from a reference picture
+
+        public RefPicture RefPic;
+        public Rectangle? RefSource;        // the box on the reference picture
+        public Rectangle? RefTarget;        // the box on the sprite
+        public string RefDescription = "";
+        public List<RefCluster> RefClusters;
+        public readonly RefOptions RefOptions = new RefOptions();
+        public RefResult RefResult;
+        public event Action RefChanged;
+
+        void FireRef() { if (RefChanged != null) RefChanged(); }
+
+        public void SetRefPicture(RefPicture p)
+        {
+            RefPic = p; RefSource = null; RefClusters = null; RefOptions.Variation = 0;
+            RecomputeRef();
+        }
+
+        public void SetRefSource(Rectangle? box)
+        {
+            RefSource = box;
+            RefClusters = RefPic != null && box.HasValue ? RefConvert.Clusters(RefPic.Image, box.Value, RefDescription) : null;
+            RefOptions.Variation = 0;
+            RecomputeRef();
+        }
+
+        public void SetRefTarget(Rectangle? box) { RefTarget = box; RefOptions.Variation = 0; RecomputeRef(); }
+
+        public void SetRefDescription(string d)
+        {
+            bool hairBefore = RefConvert.IsHair(RefDescription);
+            RefDescription = d ?? "";
+            // "hair" changes which colours in the box are kept, so look again
+            if (RefPic != null && RefSource.HasValue && hairBefore != RefConvert.IsHair(RefDescription))
+                RefClusters = RefConvert.Clusters(RefPic.Image, RefSource.Value, RefDescription);
+            RecomputeRef();
+        }
+
+        public void ToggleRefCluster(int i)
+        {
+            if (RefClusters == null || i < 0 || i >= RefClusters.Count) return;
+            RefClusters[i].Keep = !RefClusters[i].Keep;
+            RecomputeRef();
+        }
+
+        public void RecomputeRef()
+        {
+            RefResult = null;
+            if (RefPic != null && RefSource.HasValue && RefTarget.HasValue && RefClusters != null && Doc != null && Frame < Doc.FrameCount)
+                RefResult = RefConvert.Convert(RefPic.Image, RefSource.Value, RefClusters, Doc.Composite(Frame), RefTarget.Value, Doc.UsedColors(), RefDescription, RefOptions);
+            FireRef();
+        }
+
+        public void RedoRef()
+        {
+            if (RefResult == null) return;
+            RefOptions.Variation++;
+            RecomputeRef();
+        }
+
+        public void CancelRef()
+        {
+            RefTarget = null; RefResult = null; RefOptions.Variation = 0;
+            FireRef();
+            Say("Cancelled. Nothing was added.");
+        }
+
+        /// <summary>Adds the result as a new layer on top (one undo step).</summary>
+        public void ConfirmRef()
+        {
+            if (RefResult == null || RefResult.Empty || Doc == null) return;
+            var frames = Enumerable.Range(0, Doc.FrameCount).Select(i => i == Frame ? RefResult.Overlay.Clone() : new PixelImage(Doc.Layout.FrameW, Doc.Layout.FrameH)).ToList();
+            string name = string.IsNullOrWhiteSpace(RefDescription) ? "From picture" : char.ToUpper(RefDescription.Trim()[0]) + RefDescription.Trim().Substring(1);
+            LayerIndex = Doc.Layers.Count - 1;
+            AddLayerFromFrames(name, frames);
+            RefTarget = null; RefResult = null; RefOptions.Variation = 0;
+            FireRef();
+            Say("Added \"" + Current.Name + "\" as a new layer on top. Ctrl+Z to undo.");
         }
 
         public void ApplyShade()
