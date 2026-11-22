@@ -408,6 +408,15 @@ namespace PokeSpriteCreator.UI
                 E.Doc.ReplaceColorEverywhere(from, color);
                 E.Say("Changed " + PixelImage.Hex(from) + " to " + PixelImage.Hex(color) + " on every layer.");
             }
+            else if (E.Current != null && E.Doc.Kind == SpriteKind.Overworld)
+            {
+                // walking sprites: just this frame, then "copy my change" sends it where you want
+                var f = E.Current.Frames[E.Frame];
+                if (!f.Px.Contains(from)) { E.Say("That colour isn't on the selected layer. Hold Shift to change it everywhere."); return; }
+                E.BeginChange();
+                for (int i = 0; i < f.Px.Length; i++) if (f.Px[i] == from) f.Px[i] = color;
+                E.Say(PixelImage.Hex(from) + " is now " + PixelImage.Hex(color) + " on this frame. Copy the change to the other frames on the right (Shift+click changes it everywhere).");
+            }
             else if (E.Current != null)
             {
                 if (!E.Current.Frames.Any(f => f.Px.Contains(from))) { E.Say("That colour isn't on the selected layer. Hold Shift to change it on every layer."); return; }

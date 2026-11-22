@@ -45,11 +45,27 @@ namespace PokeSpriteCreator.Model
         public bool Dirty;
         public List<string> Warnings = new List<string>();
 
-        // ---- overworld sprite made from a front sprite (see OverworldGenerator)
-        /// <summary>Down and up views are made symmetric.</summary>
-        public bool OwSymmetric = true;
-        /// <summary>Optional back sprite (PNG or .psc) used for the "up" view.</summary>
-        public string UpSource;
+        /// <summary>
+        /// A trainer front sprite's in-game walking sprites (an Overworld sprite saved in the same file), or null.
+        /// Parent points back from the walking sprites to the front sprite.
+        /// </summary>
+        public SpriteDocument Overworld, Parent;
+
+        /// <summary>The file this sprite belongs to (the front sprite for its walking sprites).</summary>
+        public SpriteDocument Root { get { return Parent ?? this; } }
+
+        /// <summary>Anything in the file changed since it was saved.</summary>
+        public bool AnyDirty { get { return Dirty || (Overworld != null && Overworld.Dirty); } }
+
+        /// <summary>Gives this front sprite a set of walking sprites (frames from a picture, or blank).</summary>
+        public SpriteDocument MakeOverworld(FrameLayout lay, IList<PixelImage> frames)
+        {
+            var o = new SpriteDocument(Style, SpriteKind.Overworld, "Walk", lay ?? Style.DefaultLayout(SpriteKind.Overworld)) { Name = Name, LimitPalette = LimitPalette, Parent = this };
+            o.Layers.Add(frames == null ? o.NewLayer("Walking sprites") : o.LayerFromFrames("Walking sprites", frames));
+            Overworld = o;
+            o.Dirty = true;
+            return o;
+        }
 
         public SpriteDocument(GenStyle style, SpriteKind kind, string sheet, FrameLayout layout)
         {
@@ -60,7 +76,7 @@ namespace PokeSpriteCreator.Model
 
         public string Title
         {
-            get { return (FilePath == null ? "Untitled" : Path.GetFileNameWithoutExtension(FilePath)) + (Dirty ? " *" : ""); }
+            get { var r = Root; return (r.FilePath == null ? "Untitled" : Path.GetFileNameWithoutExtension(r.FilePath)) + (r.AnyDirty ? " *" : ""); }
         }
 
         public string Description
@@ -178,6 +194,19 @@ namespace PokeSpriteCreator.Model
 
         public void Save(string path)
         {
+            var o = ToJson();
+            if (Overworld != null) o["overworld"] = Overworld.ToJson();
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, Json.Json.Write(o), new UTF8Encoding(false));
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
+            FilePath = path;
+            Dirty = false;
+            if (Overworld != null) Overworld.Dirty = false;
+        }
+
+        JsonObject ToJson()
+        {
             var o = new JsonObject();
             o["app"] = "PokeSpriteCreator";
             o["version"] = 2;
@@ -188,11 +217,6 @@ namespace PokeSpriteCreator.Model
             o["frameWidth"] = Layout.FrameW; o["frameHeight"] = Layout.FrameH;
             o["columns"] = Layout.Cols; o["rows"] = Layout.Rows;
             o["limitPalette"] = LimitPalette;
-            if (Kind == SpriteKind.Front)
-            {
-                o["overworldSymmetric"] = OwSymmetric;
-                if (!string.IsNullOrEmpty(UpSource)) o["overworldUpSource"] = UpSource;
-            }
             var arr = new List<object>();
             foreach (var l in Layers)
             {
@@ -204,18 +228,28 @@ namespace PokeSpriteCreator.Model
                 arr.Add(j);
             }
             o["layers"] = arr;
-            var tmp = path + ".tmp";
-            File.WriteAllText(tmp, Json.Json.Write(o), new UTF8Encoding(false));
-            if (File.Exists(path)) File.Delete(path);
-            File.Move(tmp, path);
-            FilePath = path;
-            Dirty = false;
+            return o;
         }
 
         public static SpriteDocument Load(string path)
         {
             var o = Json.Json.Parse(File.ReadAllText(path, Encoding.UTF8)) as JsonObject;
             if (o == null || o.GetString("app") != "PokeSpriteCreator") throw new InvalidDataException("This isn't a Poke Sprite Creator file.");
+            var d = FromJson(o);
+            var ow = o.GetObject("overworld");
+            if (ow != null && d.Kind == SpriteKind.Front)
+            {
+                d.Overworld = FromJson(ow);
+                d.Overworld.Kind = SpriteKind.Overworld;
+                d.Overworld.Parent = d;
+                d.Warnings.AddRange(d.Overworld.Warnings);
+            }
+            d.FilePath = path;
+            return d;
+        }
+
+        static SpriteDocument FromJson(JsonObject o)
+        {
             var style = GenStyle.Get(o.GetInt("gen", 3));
             SpriteKind kind;
             if (!Enum.TryParse(o.GetString("kind", "Front"), out kind)) kind = SpriteKind.Front;
@@ -223,8 +257,6 @@ namespace PokeSpriteCreator.Model
             var d = new SpriteDocument(style, kind, o.GetString("sheet", "Walk"), lay);
             d.Name = o.GetString("name", "NEWTRAINER");
             d.LimitPalette = o.GetBool("limitPalette", true);
-            d.OwSymmetric = o.GetBool("overworldSymmetric", true);
-            d.UpSource = o.GetString("overworldUpSource");
             var layers = o.GetArray("layers") ?? new List<object>();
             foreach (var item in layers.OfType<JsonObject>())
             {
@@ -245,7 +277,6 @@ namespace PokeSpriteCreator.Model
                 }
                 d.Layers.Add(l);
             }
-            d.FilePath = path;
             return d;
         }
 

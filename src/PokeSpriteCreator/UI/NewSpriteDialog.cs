@@ -41,7 +41,7 @@ namespace PokeSpriteCreator.UI
 
             var l2 = new Label { Text = "Sprite", Font = Theme.Heading, Left = 14, Top = 214, Width = 300, Tag = "accent" };
             var kindBox = new Panel { Left = 14, Top = 238, Width = 340, Height = 72 };
-            _front = new RadioButton { Text = KindNames.Label(SpriteKind.Front) + " (walking sprite made from it)", Left = 0, Top = 2, Width = 330, Checked = true };
+            _front = new RadioButton { Text = KindNames.Label(SpriteKind.Front) + " (with its walking sprites)", Left = 0, Top = 2, Width = 330, Checked = true };
             _back = new RadioButton { Text = KindNames.Label(SpriteKind.Back), Left = 0, Top = 26, Width = 330 };
             _ow = new RadioButton { Text = KindNames.Label(SpriteKind.Overworld) + " (walking, running, bike…)", Left = 0, Top = 50, Width = 330 };
             kindBox.Controls.AddRange(new Control[] { _front, _back, _ow });

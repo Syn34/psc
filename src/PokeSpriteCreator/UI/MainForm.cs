@@ -12,11 +12,11 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.2.1";
+        public const string Version = "0.3.0";
 
         readonly Editor E;
         readonly SpriteCanvas _canvas;
-        readonly DirectionsPanel _dirs;
+        readonly InGamePanel _dirs;
         readonly LayersPanel _layers;
         readonly ColorPanel _colors;
         readonly FrameStrip _frames;
@@ -48,13 +48,12 @@ namespace PokeSpriteCreator.UI
             center.Controls.Add(_canvas);
             center.Controls.Add(_frames);
 
-            _dirs = new DirectionsPanel(E) { Dock = DockStyle.Right, Width = 318 };
+            _dirs = new InGamePanel(E) { Dock = DockStyle.Right, Width = 322 };
             var left = new Panel { Dock = DockStyle.Left, Width = 318, Tag = "panel" };
             _layers = new LayersPanel(E) { Dock = DockStyle.Fill };
             _colors = new ColorPanel(E) { Dock = DockStyle.Bottom };
             left.Controls.Add(_layers);
             left.Controls.Add(_colors);
-            _dirs.EditRequested += EditAsOverworld;
 
             var splitL = new Splitter { Dock = DockStyle.Left, Width = 4 };
             var splitR = new Splitter { Dock = DockStyle.Right, Width = 4 };
@@ -82,6 +81,7 @@ namespace PokeSpriteCreator.UI
             E.DocChanged += UpdateTitle;
             E.LayersChanged += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; UpdateMenus(); };
             E.ToolChanged += SyncToolButtons;
+            E.PartSwitched += () => { UpdateTitle(); _frames.Visible = E.Doc != null && E.Doc.FrameCount > 1; _canvas.FitToWindow(); };
             _canvas.HoverChanged += (p, c) => _pos.Text = p.HasValue ? p.Value.X + ", " + p.Value.Y + "   " + PixelImage.Hex(c) : "";
             _canvas.ZoomChanged += () => _zoomLbl.Text = _canvas.Zoom * 100 + "%";
 
@@ -96,7 +96,7 @@ namespace PokeSpriteCreator.UI
             _canvas.FitToWindow();
             if (!string.IsNullOrEmpty(_openOnStart)) OpenFile(_openOnStart);
             else if (Environment.GetEnvironmentVariable("PSC_NO_NEW_DIALOG") == null) BeginInvoke((Action)(() => NewSprite()));
-            E.Say("Draw a sprite or bring in a picture (File > Import picture). Save a trainer front sprite to see it walking in game.");
+            E.Say("Draw a sprite or bring in a picture (File > Import picture). Add the trainer's walking sprites on the right.");
         }
 
         // ------------------------------------------------------------------ menu & toolbar
@@ -147,6 +147,8 @@ namespace PokeSpriteCreator.UI
             _framesMenu.DropDownItems.Add(Item("&Next frame", Keys.Control | Keys.Right, () => { if (E.Doc != null) E.SelectFrame((E.Frame + 1) % E.Doc.FrameCount); }));
             _framesMenu.DropDownItems.Add(Item("&Previous frame", Keys.Control | Keys.Left, () => { if (E.Doc != null) E.SelectFrame((E.Frame + E.Doc.FrameCount - 1) % E.Doc.FrameCount); }));
             _framesMenu.DropDownItems.Add(new ToolStripSeparator());
+            _framesMenu.DropDownItems.Add(Item("Copy my change to its &walking steps", Keys.Control | Keys.Shift | Keys.W, () => E.Say(E.CopyChange(false))));
+            _framesMenu.DropDownItems.Add(Item("Copy my change to all &directions", Keys.Control | Keys.Shift | Keys.D, () => E.Say(E.CopyChange(true))));
             _framesMenu.DropDownItems.Add(Item("Copy frame to &all frames", Keys.None, () => E.CopyToAllFrames()));
             _framesMenu.DropDownItems.Add(Item("Mirror &Left → Right (overworld)", Keys.None, () => E.MirrorRows(true)));
             _framesMenu.DropDownItems.Add(Item("Mirror &Right → Left (overworld)", Keys.None, () => E.MirrorRows(false)));
@@ -196,19 +198,21 @@ namespace PokeSpriteCreator.UI
    recolour and mirror drawing, on as many layers as you like.
    ""Limit to 15 colours"" shows the sprite the way the games would.
 
-3. SEE IT IN GAME
-   When you save a trainer front sprite, the panel on the right makes its
-   overworld walking sprite: facing down, left, right and up, with walking
-   steps, in the style's overworld size (Gen 1-2: 16x16, Gen 3: 16x32,
-   Gen 4-5: 32x32). The head keeps the trainer's hair shape and the body
-   uses the trainer's own colours (hair, skin, shirt, trousers, shoes and a
-   headband or visor if there is one).
-   * Symmetric front and back: both sides of the down and up views match.
-   * Up view hair from a back sprite: uses the back sprite's hair shape.
-   * Export sheet: saves the 4 x 4 sheet (trainer_NAME.png for
-     Graphics/Characters).
-   * Edit as overworld sprite: opens it as its own sheet to touch up.
-   For an overworld sheet the panel plays the sheet itself.
+3. WALKING SPRITES (IN-GAME SPRITES PANEL, ON THE RIGHT)
+   A trainer front sprite keeps its walking sprites in the same file: a 4 x 4
+   sheet with rows Down, Left, Right, Up and the walking steps across.
+   * Upload walking sheet (or Start blank) adds them; Replace sheet swaps them.
+   * Click a frame (or a direction) to edit it on the big canvas; ""Main
+     sprite"" / ""Walking sprites"" switch between the two.
+   * Change one frame, then copy that change:
+       Its walking steps - to the other frames facing the same way
+       All directions    - to every other frame
+     Recolours carry over exactly. Drawn or erased pixels are lined up with
+     each frame (following the walking bob) and mirrored between left and
+     right. The change is what you did since you picked the frame. Undo
+     (Ctrl+Z) if it doesn't fit.
+   * Export sheet saves it (trainer_NAME.png for Graphics/Characters).
+   An overworld sheet opened on its own works the same way.
 
 4. EXPORT
    File > Export PNG saves the sprite at 1x to 4x, to any file or straight into
@@ -237,6 +241,8 @@ VIEW
 FRAMES
   Ctrl+Left / Ctrl+Right   previous / next frame
   Ctrl+C / Ctrl+V          copy / paste frame
+  Ctrl+Shift+W             copy my change to its walking steps
+  Ctrl+Shift+D             copy my change to all directions
 
 FILE
   Ctrl+N new   Ctrl+O open   Ctrl+I import picture   Ctrl+S save   Ctrl+E export";
@@ -415,8 +421,8 @@ FILE
 
         void UpdateTitle()
         {
-            Text = E.Doc == null ? AppName : E.Doc.Title + " - " + E.Doc.Name + " - " + AppName;
-            _docLbl.Text = E.Doc == null ? "" : E.Doc.Description;
+            Text = E.Doc == null ? AppName : E.Doc.Title + " - " + E.Root.Name + (E.Doc != E.Root ? " (walking sprites)" : "") + " - " + AppName;
+            _docLbl.Text = E.Doc == null ? "" : (E.Doc != E.Root ? "Walking sprites · " : "") + E.Doc.Description;
         }
 
         void NewBlank(GenStyle st, SpriteKind k)
@@ -443,7 +449,7 @@ FILE
 
         bool ConfirmDiscard()
         {
-            if (E.Doc == null || !E.Doc.Dirty) return true;
+            if (E.Doc == null || !E.Root.AnyDirty) return true;
             var r = MessageBox.Show(this, "Save changes to " + E.Doc.Title.TrimEnd(' ', '*') + "?", AppName, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
             if (r == DialogResult.Cancel) return false;
             if (r == DialogResult.Yes) return Save(false);
@@ -459,7 +465,7 @@ FILE
                 E.Settings.LastGen = d.Result.Style.Gen;
                 E.Settings.LastKind = d.Result.Kind.ToString();
                 SetDoc(d.Result);
-                E.Say("New " + d.Result.Description + "." + (d.Result.Kind == SpriteKind.Front ? " Save it (Ctrl+S) to see the trainer walking in game, on the right." : ""));
+                E.Say("New " + d.Result.Description + "." + (d.Result.Kind == SpriteKind.Front ? " Add its walking sprites on the right." : ""));
             }
         }
 
@@ -487,18 +493,6 @@ FILE
             }
         }
 
-        /// <summary>Directions panel > Edit as overworld sprite: the walking sprite becomes its own overworld sheet.</summary>
-        void EditAsOverworld(OverworldResult r)
-        {
-            if (E.Doc == null || r == null || !ConfirmDiscard()) return;
-            var src = E.Doc;
-            var d = new SpriteDocument(src.Style, SpriteKind.Overworld, "Walk", r.Layout) { Name = src.Name, LimitPalette = src.LimitPalette };
-            d.Layers.Add(d.LayerFromFrames("Walking sprite", r.Frames));
-            d.Dirty = true;
-            SetDoc(d);
-            E.Say("This is the walking sprite as its own overworld sheet: touch it up, then save it or export it (Ctrl+E).");
-        }
-
         void Open()
         {
             if (!ConfirmDiscard()) return;
@@ -521,10 +515,11 @@ FILE
         bool Save(bool saveAs)
         {
             if (E.Doc == null) return false;
-            string path = E.Doc.FilePath;
+            var root = E.Root;
+            string path = root.FilePath;
             if (saveAs || path == null)
             {
-                using (var sfd = new SaveFileDialog { Filter = "Sprite (*" + SpriteDocument.Extension + ")|*" + SpriteDocument.Extension, FileName = (path != null ? Path.GetFileNameWithoutExtension(path) : E.Doc.Name) + SpriteDocument.Extension })
+                using (var sfd = new SaveFileDialog { Filter = "Sprite (*" + SpriteDocument.Extension + ")|*" + SpriteDocument.Extension, FileName = (path != null ? Path.GetFileNameWithoutExtension(path) : root.Name) + SpriteDocument.Extension })
                 {
                     if (sfd.ShowDialog(this) != DialogResult.OK) return false;
                     path = sfd.FileName;
@@ -532,7 +527,7 @@ FILE
             }
             try
             {
-                E.Doc.Save(path);
+                root.Save(path);
                 E.Settings.AddRecent(path);
                 UpdateTitle();
                 E.Say("Saved " + path);
@@ -552,10 +547,12 @@ FILE
         void RenameSprite()
         {
             if (E.Doc == null) return;
-            var n = Prompt.Show(this, "Sprite name", "Name used for exported files (e.g. ACE_TRAINER_M):", E.Doc.Name);
+            var n = Prompt.Show(this, "Sprite name", "Name used for exported files (e.g. ACE_TRAINER_M):", E.Root.Name);
             if (string.IsNullOrWhiteSpace(n)) return;
-            E.Doc.Name = n.Trim().ToUpperInvariant().Replace(' ', '_');
-            E.Doc.Dirty = true;
+            var root = E.Root;
+            root.Name = n.Trim().ToUpperInvariant().Replace(' ', '_');
+            if (root.Overworld != null) root.Overworld.Name = root.Name;
+            root.Dirty = true;
             UpdateTitle();
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using PokeSpriteCreator.Model;
 
@@ -13,6 +14,7 @@ namespace PokeSpriteCreator.UI
     /// </summary>
     public class Editor
     {
+        /// <summary>The part being edited: the sprite itself, or a front sprite's walking sprites (Doc.Root is the file).</summary>
         public SpriteDocument Doc;
         public Settings Settings;
         public int LayerIndex = -1;
@@ -22,7 +24,10 @@ namespace PokeSpriteCreator.UI
         public bool Mirror, SampleMerged = true, OnionSkin;
         public PixelImage FrameClipboard;
 
-        readonly List<DocState> _undo = new List<DocState>(), _redo = new List<DocState>();
+        List<DocState> _undo = new List<DocState>(), _redo = new List<DocState>();
+        readonly Dictionary<SpriteDocument, List<DocState>[]> _history = new Dictionary<SpriteDocument, List<DocState>[]>();
+        // the frame as it was when it was picked, for "copy my change"
+        PixelImage _baseline; Layer _baseLayer; int _baseFrame = -1;
         string _lastKey; DateTime _lastTime;
         List<PixelImage> _preview;
 
@@ -34,8 +39,10 @@ namespace PokeSpriteCreator.UI
         public event Action FrameChanged;
         public event Action ColorsChanged;
         public event Action ToolChanged;
-        /// <summary>The document was saved (or opened from a file).</summary>
+        /// <summary>The document was saved.</summary>
         public event Action Saved;
+        /// <summary>Switched between the sprite and its walking sprites.</summary>
+        public event Action PartSwitched;
         public event Action<string> Status;
 
         public Editor(Settings s) { Settings = s; }
@@ -44,20 +51,99 @@ namespace PokeSpriteCreator.UI
 
         public void Say(string msg) { if (Status != null) Status(msg); }
 
+        public SpriteDocument Root { get { return Doc == null ? null : Doc.Root; } }
+
         public void SetDocument(SpriteDocument d)
         {
             Doc = d;
-            _undo.Clear(); _redo.Clear(); _lastKey = null;
+            _history.Clear();
+            _undo = new List<DocState>(); _redo = new List<DocState>(); _lastKey = null;
+            _history[d] = new[] { _undo, _redo };
             Frame = 0;
             LayerIndex = d.Layers.Count - 1;
             _preview = null;
+            CaptureBaseline();
             if (LayersChanged != null) LayersChanged();
             if (FrameChanged != null) FrameChanged();
             if (SelectionChanged != null) SelectionChanged();
             if (DocChanged != null) DocChanged();
+            if (PartSwitched != null) PartSwitched();
+        }
+
+        /// <summary>Edit another part of the same file (the sprite or its walking sprites); each keeps its own Undo.</summary>
+        public void EditPart(SpriteDocument d, int frame = 0)
+        {
+            if (d == null) return;
+            if (d == Doc) { SelectFrame(frame); return; }
+            Doc = d;
+            List<DocState>[] h;
+            if (!_history.TryGetValue(d, out h)) _history[d] = h = new[] { new List<DocState>(), new List<DocState>() };
+            _undo = h[0]; _redo = h[1]; _lastKey = null;
+            Frame = Math.Max(0, Math.Min(d.FrameCount - 1, frame));
+            LayerIndex = d.Layers.Count - 1;
+            _preview = null;
+            CaptureBaseline();
+            if (LayersChanged != null) LayersChanged();
+            if (FrameChanged != null) FrameChanged();
+            if (SelectionChanged != null) SelectionChanged();
+            if (DocChanged != null) DocChanged();
+            if (PartSwitched != null) PartSwitched();
         }
 
         public void NotifySaved() { if (Saved != null) Saved(); }
+
+        /// <summary>The walking sprites were added or replaced (tells the panels).</summary>
+        public void PartsChanged() { if (PartSwitched != null) PartSwitched(); }
+
+        // ------------------------------------------------------------------ copy a change to other frames
+
+        /// <summary>Remembers the selected frame as it is now (what "copy my change" compares against).</summary>
+        public void CaptureBaseline()
+        {
+            var l = Current;
+            if (Doc == null || l == null || Frame >= l.Frames.Count) { _baseline = null; return; }
+            _baseline = l.Frames[Frame].Clone(); _baseLayer = l; _baseFrame = Frame;
+        }
+
+        /// <summary>What changed on the selected frame since it was picked (null if it can't be worked out).</summary>
+        public ChangeCopier PendingChange
+        {
+            get
+            {
+                var l = Current;
+                if (_baseline == null || l == null || l != _baseLayer || Frame != _baseFrame || Frame >= l.Frames.Count) return null;
+                return new ChangeCopier(_baseline, l.Frames[Frame]);
+            }
+        }
+
+        /// <summary>
+        /// Copies the change made on the selected frame to the other walking frames facing the same way
+        /// (allDirections = false) or to every other frame. Returns a message for the user.
+        /// </summary>
+        public string CopyChange(bool allDirections)
+        {
+            if (Doc == null || Doc.Kind != SpriteKind.Overworld) return "Copying a change works on walking sprites.";
+            var ch = PendingChange;
+            if (ch == null || ch.IsEmpty) return "Nothing to copy: change the selected frame first (the change is what you did since you picked the frame).";
+            var l = Current;
+            int cols = Doc.Layout.Cols, row = Frame / cols;
+            BeginChange();
+            int n = 0;
+            for (int i = 0; i < Doc.FrameCount; i++)
+            {
+                if (i == Frame) continue;
+                int r = i / cols;
+                if (!allDirections && r != row) continue;
+                // left and right face opposite ways, so the change is mirrored between them
+                bool mirror = (row == 1 && r == 2) || (row == 2 && r == 1);
+                Point off;
+                l.Frames[i] = ch.ApplyTo(l.Frames[i], mirror, out off);
+                n++;
+            }
+            Changed();
+            CaptureBaseline();
+            return "Copied " + ch.Describe() + " to " + n + " frame" + (n == 1 ? "" : "s") + (allDirections ? (ch.Pixels.Count > 0 ? " (lined up with each frame, mirrored between left and right)" : "") : " facing the same way") + ". Undo (Ctrl+Z) if it doesn't fit.";
+        }
 
         // ------------------------------------------------------------------ change notifications
 
@@ -108,6 +194,7 @@ namespace PokeSpriteCreator.UI
             LayerIndex = Math.Min(s.Selected, Doc.Layers.Count - 1);
             if (Frame >= Doc.FrameCount) Frame = Doc.FrameCount - 1;
             _lastKey = null;
+            CaptureBaseline();
             LayersEdited();
             if (FrameChanged != null) FrameChanged();
         }
@@ -133,6 +220,7 @@ namespace PokeSpriteCreator.UI
             i = Math.Max(-1, Math.Min(Doc.Layers.Count - 1, i));
             if (i == LayerIndex) return;
             LayerIndex = i;
+            CaptureBaseline();
             if (SelectionChanged != null) SelectionChanged();
         }
 
@@ -142,6 +230,7 @@ namespace PokeSpriteCreator.UI
             f = Math.Max(0, Math.Min(Doc.FrameCount - 1, f));
             if (f == Frame) return;
             Frame = f;
+            CaptureBaseline();
             if (FrameChanged != null) FrameChanged();
         }
 

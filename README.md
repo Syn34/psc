@@ -2,9 +2,9 @@
 
 A sprite editor for Pokémon fan games, and a companion app for [PokeCreator](https://github.com/Syn34/pokeCreator).
 
-Draw a sprite or bring one in (PNG, GIF or BMP), edit it, and when you save a trainer front sprite the side panel
-makes its **overworld walking sprite**: facing down, left, right and up, with walking steps, in the right size for
-the style you picked (Gen 1 to Gen 5).
+Draw a sprite or bring one in (PNG, GIF or BMP) and edit it. A trainer front sprite keeps its **in-game walking sprites**
+in the same file: upload the 4 × 4 walking sheet (or start blank), edit any of the small frames on the big canvas, and copy
+a change from one frame to its walking steps or to all the other directions.
 
 ## Making a sprite
 
@@ -12,7 +12,7 @@ the style you picked (Gen 1 to Gen 5).
 
 | Kind | What it is |
 |------|------------|
-| Trainer front sprite | the battle picture; the walking sprite is made from it |
+| Trainer front sprite | the battle picture; its walking sprites are kept with it |
 | Trainer back sprite | a strip of frames (the throw animation) |
 | Overworld sheet | 4 × 4 frames: rows Down, Left, Right, Up; columns are the walking steps (Walk, Run, Bike, Surf, Fish…) |
 
@@ -30,25 +30,25 @@ duplicate, merge), undo/redo, frame strip with animated preview, onion skin, cop
 mirror, add/remove back-sprite frames. "Limit to 15 colours like Gen 5" (4 greys for Gen 1, 4 colours for Gen 2) shows and
 exports the sprite the way the games would. Light and dark mode.
 
-## The walking sprite (In-game directions panel)
+## Walking sprites (In-game sprites panel)
 
-Made from a trainer front sprite every time you save it, or when you click **Update now**.
+A trainer front sprite's walking sprites are a 4 × 4 sheet (rows Down, Left, Right, Up; the walking steps across), the
+picture used in `Graphics/Characters`. They're saved in the same `.psc` file as the front sprite.
 
-- **Size**: the style's overworld frame size: Gen 1–2 16×16, Gen 3 16×32, Gen 4–5 32×32. Gen 4/5 follow the Gen 5 look
-  (measured from real Gen 5 walking sprites): about 29 pixels tall, a big round head (~62% of the height) with the hair
-  framing a smaller face, a small body, standing on the second-to-last row; a step lifts the body a pixel while the stepping
-  foot reaches the bottom row.
-- **How**: the head keeps the trainer's hair shape (shrunk from the sprite); the body is a clean overworld-style body coloured
-  with the trainer's own colours, picked out of the sprite: hair (light and dark), skin, jacket/shirt (with the inner shirt
-  down the middle), trousers, shoes, and a headband or visor if there is one. So it works whatever pose the battle sprite has.
-  Left and right are mirrors; walking frames lift one foot (down/up) or spread the legs (sideways).
-- **Symmetric front and back**: makes both sides of the down and up views match (battle sprites are often drawn at an angle).
-- **Up view hair from a back sprite**: uses a back sprite's hair shape (PNG, GIF or `.psc`) for the view from behind.
-- **Export sheet…**: saves the 4 × 4 sheet at 1×–4× (`trainer_NAME.png`, for `Graphics/Characters`).
-- **Edit as overworld sprite**: opens the sheet as its own overworld sprite to touch up.
-- For an overworld sheet the panel plays the sheet itself; back sprites don't make a walking sprite.
+- **Upload walking sheet…** (or **Start blank**) adds them; **Replace sheet…** swaps them for another picture.
+- Click a direction or a frame in the sheet to edit it on the big canvas. **Main sprite** / **Walking sprites** switch
+  between the two; each keeps its own Undo.
+- **Copy my change on this frame to:**
+  - **Its walking steps**: the other frames facing the same way.
+  - **All directions**: every other frame.
 
-It's a starting point: small details (logos, bags, things held in the hand) aren't carried over.
+  The change is what you did to the frame since you picked it. A recolour (a colour changed everywhere it appears on the
+  frame) is recoloured on the other frames too. Drawn or erased pixels are pasted where the area around them matches each
+  frame best, so they follow the walking bob, and are mirrored between left and right. Undo (Ctrl+Z) if a frame needs it
+  done by hand. Also in *Frames* (Ctrl+Shift+W / Ctrl+Shift+D).
+- The Recolour tool changes only the frame you're on when editing walking sprites (Shift+click: every frame and layer).
+- **Export sheet…** saves the sheet (`trainer_NAME.png`) at 1×–4×, to a file or into a game folder.
+- An overworld sheet opened on its own works the same way.
 
 ## Exporting
 
@@ -56,8 +56,8 @@ It's a starting point: small details (logos, bags, things held in the hand) aren
 right name: `Graphics/Trainers/NAME.png`, `Graphics/Trainers/NAME_back.png`, `Graphics/Characters/trainer_NAME.png`,
 `Graphics/Characters/NAME_bike.png`, …
 
-Sprites save as `.psc` files (layers, frames and walking-sprite settings). Files from 0.1.x open too; their part layers
-become paint layers.
+Sprites save as `.psc` files (layers, frames, and a front sprite's walking sprites). Files from 0.1.x open too; their part
+layers become paint layers.
 
 | Style | Front | Back | Overworld frame | Colours |
 |-------|-------|------|-----------------|---------|
@@ -75,12 +75,12 @@ become paint layers.
 
 The source is C# 5 for .NET Framework 4.8 with WinForms, no NuGet packages.
 
-`PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and checks picture import, editing, colour limits,
-saving, exporting and the walking sprite for every style.
+`PokeSpriteCreator.exe --selftest [folder]` draws a plain test trainer and walking sheet and checks picture import, editing,
+colour limits, saving (with walking sprites), exporting and copying changes between frames.
 
 ## Keyboard shortcuts
 
 B pencil · E eraser · G fill · I picker · L line · R rectangle · O ellipse · M move · C recolour ·
 X swap colours · S mirror · Alt+click pick colour · Shift = filled shape / straight line ·
 arrows nudge the layer · Ctrl+wheel zoom · middle-drag pan · Ctrl+←/→ frames · Ctrl+Z / Ctrl+Y undo/redo ·
-Ctrl+I import picture · Ctrl+S save (makes the walking sprite) · Ctrl+E export
+Ctrl+I import picture · Ctrl+S save · Ctrl+E export · Ctrl+Shift+W / Ctrl+Shift+D copy my change to its walking steps / all directions

@@ -83,13 +83,10 @@ namespace PokeSpriteCreator
             // save / load
             var file = Path.Combine(dir, "test.psc");
             d.Name = "TESTER";
-            d.OwSymmetric = false;
-            d.UpSource = Path.Combine(dir, "back.png");
             var before = d.Composite(0);
             d.Save(file);
             var back = SpriteDocument.Load(file);
             Check(back.Layers.Count == d.Layers.Count && back.Name == "TESTER" && back.Composite(0).SameAs(before), "save and open keep the sprite");
-            Check(!back.OwSymmetric && back.UpSource == d.UpSource, "save keeps the walking-sprite settings");
 
             // files from 0.1.x with part layers open as paint layers
             var legacy = new JsonObject();
@@ -129,43 +126,63 @@ namespace PokeSpriteCreator
             ebd.SetFrameCount(5);
             Check(bd.FrameCount == 5 && bd.Layers[0].Frames.Count == 5, "frames can be added");
 
-            // ---- walking sprite made from the front sprite
-            foreach (var st in GenStyle.All)
-            {
-                var r = OverworldGenerator.Make(trainer, st, true, null);
-                string g = st.Name + ": ";
-                Check(r.Frames.Count == 16 && r.Frames.All(f => f.W == st.OwW && f.H == st.OwH), g + "16 frames of " + st.OwW + "x" + st.OwH);
-                bool big = st.OwW >= 32 && st.OwH >= 32;
-                // big (Gen 4/5) style: standing feet one row up, stepping foot on the bottom row; smaller styles stand on the bottom row
-                Check(Enumerable.Range(0, 4).All(dd => r.Frame(dd, 0).Bounds().Bottom == (big ? st.OwH - 1 : st.OwH)), g + "standing frames stand on the right row");
-                Check(!big || Enumerable.Range(0, 4).All(dd => r.Frame(dd, 1).Bounds().Bottom == st.OwH && r.Frame(dd, 1).Bounds().Top == r.Frame(dd, 0).Bounds().Top - 1), g + "steps bob up a pixel and reach the bottom row");
-                Check(!big || r.Frame(OverworldGenerator.Down, 0).Bounds().Height >= 27, g + "Gen 4/5 figure is about 29 pixels tall (" + r.Frame(0, 0).Bounds().Height + ")");
-                var colorsUsed = new HashSet<int>(); foreach (var f in r.Frames) colorsUsed.UnionWith(f.Colors());
-                Check(st.Greyscale ? colorsUsed.IsSubsetOf(st.Palette) : colorsUsed.Count <= st.MaxColors, g + "within the colour limit (" + colorsUsed.Count + ")");
-                for (int s = 0; s < 4; s++) Check(r.Frame(OverworldGenerator.Right, s).SameAs(r.Frame(OverworldGenerator.Left, s).FlipH()), g + "right is the mirror of left, step " + s);
-                Check(!r.Frame(OverworldGenerator.Down, 1).SameAs(r.Frame(OverworldGenerator.Down, 0)) && !r.Frame(OverworldGenerator.Down, 3).SameAs(r.Frame(OverworldGenerator.Down, 1)), g + "walking steps differ");
-                Check(r.Frame(OverworldGenerator.Down, 0).SameAs(r.Frame(OverworldGenerator.Down, 2)), g + "columns 1 and 3 are the standing frame");
-                if (!st.Greyscale)
-                {
-                    Check(r.Colors.Skin == Skin && r.Colors.Torso == Shirt && r.Colors.Legs == Pants && r.Colors.Shoes == ShoeC && r.Colors.Band == Band, g + "picks the trainer's colours");
-                    // with few colours the skin may be merged into a near colour: count the frame's colour nearest to skin
-                    var downF = r.Frame(OverworldGenerator.Down, 0);
-                    int skinNow = ColorTools.Nearest(Skin, downF.Colors().ToList());
-                    int downSkin = downF.Px.Count(c => c == skinNow), upSkin = r.Frame(OverworldGenerator.Up, 0).Px.Count(c => c == skinNow);
-                    Check(downSkin > upSkin + 6, g + "face shows facing down but not facing up");
-                }
-                var sym = r.Frame(OverworldGenerator.Down, 0);
-                Check(sym.SameAs(sym.FlipH()), g + "symmetric down view is exactly symmetric");
-            }
-            var blank = OverworldGenerator.Make(new PixelImage(80, 80), g5, true, null);
-            Check(blank.Frames.Count == 16 && blank.Frames.All(f => f.IsEmpty), "empty sprite gives an empty sheet");
-            // a back sprite's hair is used for the up view
-            var backPic = TestTrainer(80, 80, 0, 3);
-            for (int y = 0; y < 30; y++) for (int x = 0; x < 80; x++) if (backPic.Get(x, y) != 0) backPic.Set(x, y, Hair);
-            var withBack = OverworldGenerator.Make(trainer, g5, true, backPic);
-            Check(withBack.Note.Contains("back sprite"), "up view from a back sprite");
-            OverworldGenerator.Make(trainer, g5, true, null);
-            SpriteDocument.MakeSheet(OverworldGenerator.Make(trainer, g5, true, null).Frames, new FrameLayout(32, 32, 4, 4), 1).Save(Path.Combine(dir, "trainer_walk.png"));
+            // ---- walking sprites kept with the front sprite
+            var sheetPic = TestSheet();
+            sheetPic.Save(Path.Combine(dir, "walk_sheet.png"));
+            var sheetFrames = ImageImport.LoadFrames(Path.Combine(dir, "walk_sheet.png"));
+            var owLay = ImageImport.Suggest(sheetFrames, SpriteKind.Overworld, g5, out note);
+            Check(owLay.Cols == 4 && owLay.Rows == 4 && owLay.FrameW == 32, "walking sheet picture gives 32x32 frames");
+            var set = d.MakeOverworld(owLay, ImageImport.FramesFor(sheetFrames, owLay));
+            Check(set.Parent == d && set.Root == d && d.AnyDirty, "walking sprites belong to the front sprite");
+            d.Save(file);
+            var reopened = SpriteDocument.Load(file);
+            Check(reopened.Overworld != null && reopened.Overworld.Kind == SpriteKind.Overworld && reopened.Overworld.Parent == reopened &&
+                  reopened.Overworld.FrameCount == 16 && reopened.Overworld.Composite(5).SameAs(set.Composite(5)), "walking sprites are saved in the same file");
+            Check(!reopened.AnyDirty, "opened file isn't marked changed");
+
+            // switching between the parts keeps separate undo
+            var es = new Editor(new Settings());
+            es.SetDocument(reopened);
+            es.EditPart(reopened.Overworld, 4);
+            Check(es.Doc == reopened.Overworld && es.Frame == 4 && es.Root == reopened, "edit the walking sprites");
+            es.BeginChange(); es.Current.Frames[4].Set(0, 0, PixelImage.Rgb(9, 9, 9)); es.Changed();
+            Check(reopened.AnyDirty && reopened.Title.EndsWith("*"), "a change to the walking sprites marks the file changed");
+            es.EditPart(reopened);
+            Check(!es.CanUndo, "the main sprite has its own undo");
+            es.EditPart(reopened.Overworld, 4);
+            Check(es.CanUndo, "the walking sprites keep theirs");
+            es.Undo();
+
+            // copy a recolour from Down 1 to every frame
+            var ow = reopened.Overworld;
+            es.EditPart(ow, 0);
+            es.BeginChange();
+            var f0 = es.Current.Frames[0];
+            for (int i = 0; i < f0.Px.Length; i++) if (f0.Px[i] == Shirt) f0.Px[i] = PixelImage.Rgb(30, 160, 60);
+            es.Changed();
+            var pending = es.PendingChange;
+            Check(pending != null && pending.Recolors.Count == 1 && pending.Pixels.Count == 0, "a recolour is seen as a recolour (" + (pending == null ? "none" : pending.Describe()) + ")");
+            es.CopyChange(true);
+            Check(Enumerable.Range(0, 16).All(i => !ow.Layers[0].Frames[i].Px.Contains(Shirt) && ow.Layers[0].Frames[i].Px.Contains(PixelImage.Rgb(30, 160, 60))), "recolour copied to all 16 frames");
+
+            // copy a drawn mark from Down 1 to its walking steps: the steps are one pixel higher, so the mark follows
+            es.SelectFrame(0);
+            es.BeginChange();
+            es.Current.Frames[0].Set(15, 20, PixelImage.Rgb(255, 255, 0)); es.Current.Frames[0].Set(16, 20, PixelImage.Rgb(255, 255, 0));
+            es.Changed();
+            es.CopyChange(false);
+            Check(ow.Layers[0].Frames[1].Get(15, 19) == PixelImage.Rgb(255, 255, 0) && ow.Layers[0].Frames[1].Get(16, 19) == PixelImage.Rgb(255, 255, 0), "drawn pixels follow the step's bob");
+            Check(ow.Layers[0].Frames[2].Get(15, 20) == PixelImage.Rgb(255, 255, 0), "and land in the same place on the other standing frame");
+            Check(ow.Layers[0].Frames[4].Get(15, 20) != PixelImage.Rgb(255, 255, 0), "other directions untouched by 'its walking steps'");
+
+            // left -> right is mirrored
+            es.SelectFrame(4);
+            es.BeginChange();
+            es.Current.Frames[4].Set(12, 22, PixelImage.Rgb(255, 0, 255));
+            es.Changed();
+            es.CopyChange(true);
+            Check(ow.Layers[0].Frames[8].Get(31 - 12, 22) == PixelImage.Rgb(255, 0, 255), "a change on a left frame lands mirrored on the right frame");
+            Check(es.PendingChange != null && es.PendingChange.IsEmpty, "after copying, the frame has no pending change");
 
             // ---- shapes
             Check(SpriteCanvas.LinePoints(new Point(0, 0), new Point(5, 2)).Count() == 6, "line");
@@ -191,6 +208,25 @@ namespace PokeSpriteCreator
             for (int y = y0; y <= y1; y++)
                 for (int x = x0; x <= x1; x++)
                     img.Set(x, y, (x == x0 || x == x1 || y == y0 || y == y1) ? K : fill);
+        }
+
+        /// <summary>A plain 4 x 4 walking sheet (32x32 frames): a little figure in each frame, the steps one pixel higher, left and right mirrored.</summary>
+        static PixelImage TestSheet()
+        {
+            var sheet = new PixelImage(128, 128);
+            for (int i = 0; i < 16; i++)
+            {
+                var f = new PixelImage(32, 32);
+                int bob = (i % 4 == 1 || i % 4 == 3) ? 1 : 0, row = i / 4;
+                Rect(f, 9, 3 - bob, 22, 17 - bob, row == 3 ? HairD : Hair);    // head
+                if (row != 3) Rect(f, row == 1 ? 9 : row == 2 ? 14 : 11, 10 - bob, row == 1 ? 17 : row == 2 ? 22 : 20, 16 - bob, Skin);  // face
+                Rect(f, 10, 17 - bob, 21, 25 - bob, Shirt);                      // body
+                Rect(f, 11, 25 - bob, 15, 30, Pants); Rect(f, 16, 25 - bob, 20, 30, Pants);
+                if (row == 1) { f.Set(5, 24, Band); f.Set(5, 25, Band); }        // something only on the left side
+                if (row == 2) { f.Set(26, 24, Band); f.Set(26, 25, Band); }
+                sheet.Paste(f, (i % 4) * 32, row * 32);
+            }
+            return sheet;
         }
 
         /// <summary>A simple standing trainer drawn with boxes (hair, headband, face, shirt, trousers, shoes), feet on row top+76.</summary>

@@ -11,6 +11,7 @@ namespace PokeSpriteCreator.UI
     public class ExportDialog : Form
     {
         readonly Editor E;
+        readonly SpriteDocument D;
         readonly ComboBox _scale;
         readonly CheckBox _limit;
         readonly RadioButton _toFile, _toProject;
@@ -20,10 +21,11 @@ namespace PokeSpriteCreator.UI
 
         public string ExportedPath;
 
-        public ExportDialog(Editor e)
+        public ExportDialog(Editor e, SpriteDocument doc = null)
         {
             E = e;
-            var d = e.Doc;
+            D = doc ?? e.Doc;
+            var d = D;
             Text = "Export sprite";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -107,13 +109,13 @@ namespace PokeSpriteCreator.UI
         string TargetPath()
         {
             if (_toFile.Checked) return _file.Text.Trim();
-            var name = string.IsNullOrWhiteSpace(_name.Text) ? E.Doc.Name : _name.Text.Trim().Replace(' ', '_');
-            return Path.Combine(_project.Text.Trim(), ProjectSubfolder(E.Doc), DefaultFileName(E.Doc, name));
+            var name = string.IsNullOrWhiteSpace(_name.Text) ? D.Name : _name.Text.Trim().Replace(' ', '_');
+            return Path.Combine(_project.Text.Trim(), ProjectSubfolder(D), DefaultFileName(D, name));
         }
 
         void UpdateAll()
         {
-            var d = E.Doc;
+            var d = D;
             var sheet = d.BuildSheet(_limit.Checked, 1);
             _preview.Image = sheet;
             _preview.Caption = "Preview";
@@ -143,13 +145,13 @@ namespace PokeSpriteCreator.UI
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                E.Doc.BuildSheet(_limit.Checked, ExportScale).Save(path);
+                D.BuildSheet(_limit.Checked, ExportScale).Save(path);
             }
             catch (Exception ex) { MessageBox.Show(this, "Couldn't save the picture:\r\n" + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
             E.Settings.ExportScale = ExportScale;
             if (_toFile.Checked) E.Settings.LastExportFolder = Path.GetDirectoryName(path);
             else E.Settings.LastProjectFolder = _project.Text.Trim();
-            if (_toProject.Checked && !string.IsNullOrWhiteSpace(_name.Text) && _name.Text.Trim() != E.Doc.Name) { E.Doc.Name = _name.Text.Trim(); E.Doc.Dirty = true; }
+            if (_toProject.Checked && !string.IsNullOrWhiteSpace(_name.Text) && _name.Text.Trim() != D.Name) { D.Name = _name.Text.Trim(); D.Dirty = true; }
             ExportedPath = path;
             DialogResult = DialogResult.OK;
             Close();
