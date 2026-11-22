@@ -46,6 +46,12 @@ it, and the right-hand panel suggests shading for it the way a pixel artist woul
 - It uses the part's own shades from your sprite, so it adds no colours (untick *Only colours already in the sprite* to
   let it make a missing darker or lighter shade).
 
+- **Fix the shape too (more natural)** lets it change the shape, not just the colours. A neck (a narrower part under a
+  wider part of the same colour) goes into the head's shadow: a darker row under the chin, then the shadow tone. If the
+  neck is nearly as wide as the head, it's narrowed to about 60% of the head's width. It also fills gaps in the edge,
+  smooths one-pixel bumps and removes stray dark pixels inside the part.
+- Small details drawn in a darker shade inside the part (a mouth, a nose) are always kept.
+
 The panel shows the part now and suggested, the colours used (outline, under, shadow, base, highlight) and a list of
 what it changes and why (no outline, shaded on both sides, highlight too wide, too many shades…). The suggestion is also
 drawn on the canvas. **Apply** (Enter) puts it on the selected layer; Ctrl+Z takes it off; Esc clears the box.

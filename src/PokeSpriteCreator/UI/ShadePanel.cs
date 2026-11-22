@@ -18,7 +18,7 @@ namespace PokeSpriteCreator.UI
         readonly RampView _ramp;
         readonly Label _notes, _help;
         readonly ComboBox _light, _outline;
-        readonly CheckBox _under, _soft, _existing, _preview;
+        readonly CheckBox _natural, _under, _soft, _existing, _preview;
         readonly Button _apply, _clear;
         readonly ToolTip _tip = new ToolTip();
         bool _syncing;
@@ -50,30 +50,32 @@ namespace PokeSpriteCreator.UI
             _outline.Items.AddRange(new object[] { "Add around it (outside)", "On its edge pixels", "No outline" });
             _outline.SelectedIndex = 0;
 
-            _under = new CheckBox { Text = "Shadow under the part above it", Left = 8, Top = 338, Width = 300, Height = 22, Checked = true };
-            _soft = new CheckBox { Text = "Softer outline on the lit side", Left = 8, Top = 360, Width = 300, Height = 22 };
-            _existing = new CheckBox { Text = "Only colours already in the sprite", Left = 8, Top = 382, Width = 300, Height = 22, Checked = true };
-            _preview = new CheckBox { Text = "Show the suggestion on the canvas", Left = 8, Top = 404, Width = 300, Height = 22, Checked = true };
+            _natural = new CheckBox { Text = "Fix the shape too (more natural)", Left = 8, Top = 338, Width = 300, Height = 22 };
+            _under = new CheckBox { Text = "Shadow under the part above it", Left = 8, Top = 360, Width = 300, Height = 22, Checked = true };
+            _soft = new CheckBox { Text = "Softer outline on the lit side", Left = 8, Top = 382, Width = 300, Height = 22 };
+            _existing = new CheckBox { Text = "Only colours already in the sprite", Left = 8, Top = 404, Width = 300, Height = 22, Checked = true };
+            _preview = new CheckBox { Text = "Show the suggestion on the canvas", Left = 8, Top = 426, Width = 300, Height = 22, Checked = true };
 
-            _ramp = new RampView { Left = 8, Top = 432, Width = 300, Height = 46 };
+            _ramp = new RampView { Left = 8, Top = 454, Width = 300, Height = 46 };
 
-            _apply = new Button { Text = "Apply", Left = 8, Top = 484, Width = 146, Height = 30, Enabled = false };
-            _clear = new Button { Text = "Clear box", Left = 160, Top = 484, Width = 146, Height = 30, Enabled = false };
+            _apply = new Button { Text = "Apply", Left = 8, Top = 506, Width = 146, Height = 30, Enabled = false };
+            _clear = new Button { Text = "Clear box", Left = 160, Top = 506, Width = 146, Height = 30, Enabled = false };
 
-            _notes = new Label { Left = 8, Top = 522, Width = 300, Height = 220, Font = Theme.UiFont };
+            _notes = new Label { Left = 8, Top = 544, Width = 300, Height = 220, Font = Theme.UiFont };
 
             _tip.SetToolTip(_light, "Which side the light comes from. Automatic works it out from how the rest of the sprite is shaded.");
             _tip.SetToolTip(_outline, "Add around it: a 1-pixel outline outside the part, where it meets the background.\nOn its edge pixels: keeps the part the same size.");
+            _tip.SetToolTip(_natural, "Lets it change the shape, not just the colours: puts a neck (a narrower part under a wider part of the same colour) in the head's shadow and narrows it if it's nearly as wide as the head, fills gaps in the edge, smooths one-pixel bumps and removes stray dark pixels inside the part.");
             _tip.SetToolTip(_under, "A darker row just under anything that overlaps the part from above (like a leg under shorts).");
             _tip.SetToolTip(_soft, "Uses a lighter brown instead of the dark outline on the side facing the light (often seen in Gen 5 sprites).");
             _tip.SetToolTip(_existing, "On: never adds colours, so you stay within the generation's colour limit. Off: makes a darker or lighter shade if the sprite doesn't have one.");
             _tip.SetToolTip(_apply, "Puts the suggested shading on the selected layer. Ctrl+Z undoes it.");
 
-            Controls.AddRange(new Control[] { title, _help, nowLbl, afterLbl, _now, _after, lightLbl, _light, outLbl, _outline, _under, _soft, _existing, _preview, _ramp, _apply, _clear, _notes });
+            Controls.AddRange(new Control[] { title, _help, nowLbl, afterLbl, _now, _after, lightLbl, _light, outLbl, _outline, _natural, _under, _soft, _existing, _preview, _ramp, _apply, _clear, _notes });
 
             EventHandler opts = (s, a) => { if (!_syncing) ReadOptions(); };
             _light.SelectedIndexChanged += opts; _outline.SelectedIndexChanged += opts;
-            _under.CheckedChanged += opts; _soft.CheckedChanged += opts; _existing.CheckedChanged += opts;
+            _natural.CheckedChanged += opts; _under.CheckedChanged += opts; _soft.CheckedChanged += opts; _existing.CheckedChanged += opts;
             _preview.CheckedChanged += (s, a) => { E.ShadePreview = _preview.Checked; E.RecomputeShade(); };
             _apply.Click += (s, a) => E.ApplyShade();
             _clear.Click += (s, a) => E.SetShadeArea(null);
@@ -92,6 +94,7 @@ namespace PokeSpriteCreator.UI
             var o = E.ShadeOptions;
             o.Light = Lights[Math.Max(0, _light.SelectedIndex)];
             o.Outline = (OutlineMode)Math.Max(0, _outline.SelectedIndex);
+            o.Natural = _natural.Checked;
             o.CastShadow = _under.Checked;
             o.SoftLitOutline = _soft.Checked;
             o.OnlyExisting = _existing.Checked;

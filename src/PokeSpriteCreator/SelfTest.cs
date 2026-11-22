@@ -294,6 +294,74 @@ namespace PokeSpriteCreator
                 Check(ShadingHelper.GuessLight(ball) == LightFrom.Right, "guesses light from the right");
             }
 
+            // ---- "more natural": the neck from Mike's screenshot (lightest skin under the chin, no shadow)
+            {
+                string[] neckRows = {
+                    ".................A.......................",
+                    "............BAAA.BA.AAA..................",
+                    ".............BBBABBABBBCC................",
+                    "..........AAAABBBBBBBACC.................",
+                    "........AABBBBBBBBBBBBBBCC...............",
+                    ".......ABBBBABBBBBBABBBBBBCC.............",
+                    ".......AAAAABDEEEABABABBBBBBC............",
+                    ".........CBAFGDADGAFBABBBACBC............",
+                    "........ABAFFAEEEAFFAFBABBC..............",
+                    ".......ABBAFBBBBBFFFFFAACBBA.............",
+                    "......AB.ABBFFFFFBBBFFFAABBBA............",
+                    ".........CFGEEEGFFFFBBFAAACBBA...........",
+                    ".........CEECCCBEEFFFFAAACACC............",
+                    "........CECCBGBHBBEEBABACC.A.............",
+                    "........CC.CIECIIIICJHBBHC...............",
+                    "...........BHJHKKKKCEHABA................",
+                    "..........BBCIKKKKKHKIKBA................",
+                    "..........B.CIIKKKKKKC..BA...............",
+                    ".............CIIHHKKBKK..B...............",
+                    "............AKCBKKHKKKAA.................",
+                    "...........AAKKKKKKKAAAAAA...............",
+                    "..........AAAAAAKKKAAAAAAAAAA............",
+                    ".........AAAAAAAAAAAAAAAAAAAAAAC.........",
+                    ".......CAAACAAAAAAAAAAAAACCCCCCAAB.......",
+                    "......CAAAACAALAACGAAACCCFFFFFBCCKKH.....",
+                    "......CAAAACAAAAAECAACGEFGCCGFFBGDIIB....",
+                    ".....CAACAACAAAAADECGEEBBHIHBBDEEEBIB....",
+                    "....HAAACACCAAAAAECFEEBKHKHIKDEEEFCB.....",
+                    "...HKHAACC..AAAAAECBFEBIHKBKBEEIFCB......",
+                    "...HKKKC....AAAACCGCCBHBHBIBBFFCC........",
+                    "...HKKKKC...AAAAAACGECIICCLDCCC..........",
+                    "....BKKKB...AAAAAAAACECCC................",
+                    ".....BIKIB.AAAAAAAAAAC...................",
+                    "......BIBHBAAAAAAAAAAAC.................."
+                };
+                var neckPal = new Dictionary<char, int> { { 'A', 0x292929 }, { 'B', 0x634A42 }, { 'C', 0x000000 }, { 'D', 0x5A5A6B }, { 'E', 0xEFEFFF }, { 'F', 0xCE5252 }, { 'G', 0x94949C }, { 'H', 0xAD8473 }, { 'I', 0xDEA57B }, { 'J', 0xCECEDE }, { 'K', 0xFFD6BD }, { 'L', 0x212942 } };
+                var neck = new PixelImage(neckRows[0].Length, neckRows.Length);
+                for (int y = 0; y < neckRows.Length; y++)
+                    for (int x = 0; x < neckRows[y].Length; x++)
+                        if (neckRows[y][x] != '.') { int v = neckPal[neckRows[y][x]]; neck.Set(x, y, PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255)); }
+                var neckColors = new HashSet<int>(neck.Px.Where(c => c != 0));
+                var nopt = new ShadeOptions { Natural = true, Light = LightFrom.Left };
+                var nBox = ShadingHelper.Suggest(neck, neck, new Rectangle(10, 19, 15, 3), neckColors, nopt);
+                var nClick = ShadingHelper.Suggest(neck, neck, ShadingHelper.AreaAround(neck, new Point(16, 20)), neckColors, nopt);
+                neck.Scale(8).Save(Path.Combine(dir, "neck_before.png"));
+                nBox.After.Scale(8).Save(Path.Combine(dir, "neck_box.png"));
+                nClick.After.Scale(8).Save(Path.Combine(dir, "neck_click.png"));
+                Func<int, int> nrgb = v => PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+                int lightest = nrgb(0xFFD6BD);
+                bool neckDark = true;
+                for (int x = 10; x < 25; x++) for (int y = 20; y < 22; y++) if (nBox.After.Get(x, y) == lightest) neckDark = false;
+                Check(nBox.Ramp.Base == lightest && nBox.Ramp.Outline != nrgb(0x000000), "natural: picks the skin under the box, not the black shirt (" + PixelImage.Hex(nBox.Ramp.Base) + ")");
+                Check(neckDark && nBox.After.Get(16, 20) == nrgb(0xAD8473), "natural: the neck is in the head's shadow (darker row under the chin, no lightest skin left on it)");
+                bool outsideSame = true;
+                for (int y = 0; y < neck.H; y++) for (int x = 0; x < neck.W; x++)
+                    if (!new Rectangle(9, 18, 17, 5).Contains(x, y) && nBox.After.Get(x, y) != neck.Get(x, y)) outsideSame = false;
+                Check(outsideSame, "natural: nothing outside the box changes");
+                int w20 = 0; for (int x = 0; x < neck.W; x++) { int c = nClick.After.Get(x, 20); if (ShadingHelper.Related(c, lightest) && PixelImage.Luma(c) > 0.45) w20++; }
+                Check(nClick.Notes.Any(n => n.Contains("narrowed")) && w20 <= 6, "natural: a neck nearly as wide as the head is narrowed (" + w20 + " skin pixels wide)");
+                Check(nClick.After.Get(16, 18) == neck.Get(16, 18) && nClick.After.Get(17, 18) == neck.Get(17, 18), "small details drawn in a darker shade (the mouth) are kept");
+                var plain = ShadingHelper.Suggest(neck, neck, new Rectangle(10, 19, 15, 3), neckColors, new ShadeOptions { Light = LightFrom.Left });
+                Check(!plain.Notes.Any(n => n.Contains("narrower part")), "without \"more natural\" the shape isn't touched");
+                File.WriteAllText(Path.Combine(dir, "neck_notes.txt"), "BOX " + nBox.Area + "\r\n" + string.Join("\r\n", nBox.Notes.ToArray()) + "\r\n\r\nCLICK " + nClick.Area + "\r\n" + string.Join("\r\n", nClick.Notes.ToArray()));
+            }
+
             // ---- tabs and comparing
             var et = new Editor(new Settings());
             var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));

@@ -15,6 +15,7 @@ namespace PokeSpriteCreator.Model
         public bool CastShadow = true;          // darker row just under a part that overlaps from above
         public bool SoftLitOutline = false;     // lighter outline on the side facing the light
         public bool OnlyExisting = true;        // never suggest colours that aren't in the sprite yet
+        public bool Natural = false;            // may change the shape too: necks, gaps, bumps, stray pixels
     }
 
     /// <summary>The colours a suggestion uses (0 = none).</summary>
@@ -204,9 +205,12 @@ namespace PokeSpriteCreator.Model
                 }
             if (counts.Count == 0) { s.Notes.Add("There's nothing on the selected layer in that box."); return s; }
             int top = 0, topFamily = -1;
+            // near-black is nearly always outline (or a dark shirt): only pick it when there's nothing lighter in the box
+            bool anyLight = counts.Keys.Any(c => L(c) >= 0.25);
             foreach (var c in counts.Keys)
             {
-                int fam = counts.Where(kv => Related(kv.Key, c)).Sum(kv => kv.Value);
+                if (anyLight && L(c) < 0.25) continue;
+                int fam = counts.Where(kv => Related(kv.Key, c) && (!anyLight || L(kv.Key) >= 0.25)).Sum(kv => kv.Value);
                 if (fam > topFamily || (fam == topFamily && counts[c] > counts[top])) { topFamily = fam; top = c; }
             }
             // the most used colour of that family is the part's main colour
@@ -219,18 +223,18 @@ namespace PokeSpriteCreator.Model
             var dark = family.Where(c => L(c) < thr).OrderBy(c => L(c)).ToList();
             var ramp = s.Ramp;
             int nl = light.Count;
-            if (nl >= 4)
+            if (nl == 0) ramp.Base = top;
+            else
             {
-                ramp.Highlight = light[nl - 1];
-                var mids = light.Skip(1).Take(nl - 2).ToList();
-                ramp.Base = mids.OrderByDescending(c => { int n; counts.TryGetValue(c, out n); return n; }).ThenByDescending(c => L(c)).First();
-                int bi = light.IndexOf(ramp.Base);
-                ramp.Shadow = light[bi - 1];
-                ramp.Under = bi >= 2 ? light[bi - 2] : (dark.Count > 0 ? dark[dark.Count - 1] : ramp.Shadow);
+                // the main colour = the shade the part uses most; with 4+ shades a most-used lightest one is an
+                // overused highlight, so the next one down is the main colour
+                int mi = Enumerable.Range(0, nl).OrderByDescending(i => { int n; counts.TryGetValue(light[i], out n); return n; }).ThenByDescending(i => i).First();
+                if (mi == nl - 1 && nl >= 4) mi = nl - 2;
+                ramp.Base = light[mi];
+                if (mi < nl - 1) ramp.Highlight = light[nl - 1 == mi + 1 || nl >= 4 ? nl - 1 : mi + 1];
+                if (mi >= 1) ramp.Shadow = light[mi - 1];
+                if (mi >= 2) ramp.Under = light[mi - 2];
             }
-            else if (nl == 3) { ramp.Shadow = light[0]; ramp.Base = light[1]; ramp.Highlight = light[2]; }
-            else if (nl == 2) { ramp.Shadow = light[0]; ramp.Base = light[1]; }
-            else ramp.Base = light.Count > 0 ? light[0] : top;
             if (ramp.Shadow == 0)
             {
                 if (!o.OnlyExisting) { ramp.Shadow = MakeShadow(ramp.Base); ramp.New.Add(ramp.Shadow); }
@@ -239,7 +243,7 @@ namespace PokeSpriteCreator.Model
             if (ramp.Highlight == 0)
             {
                 if (!o.OnlyExisting) { ramp.Highlight = MakeHighlight(ramp.Base); ramp.New.Add(ramp.Highlight); }
-                else s.Notes.Add("No lighter shade of this colour for a highlight. Untick \"Only colours already in the sprite\" to get one (" + PixelImage.Hex(MakeHighlight(ramp.Base)) + ").");
+                else if (nl <= 1) s.Notes.Add("No lighter shade of this colour for a highlight. Untick \"Only colours already in the sprite\" to get one (" + PixelImage.Hex(MakeHighlight(ramp.Base)) + ").");
             }
             if (ramp.Under == 0)
             {
@@ -269,7 +273,14 @@ namespace PokeSpriteCreator.Model
                 }
             s.Pixels = partCount;
             Func<int, int, bool> part = (x, y) => x >= 0 && y >= 0 && x < W && y < H && inPart[y * W + x];
-            Func<int, int, bool> empty = (x, y) => x >= 0 && y >= 0 && x < W && y < H && layer.Get(x, y) == 0 && composite.Get(x, y) == 0;
+            var after = s.After;
+            // empty = nothing there now (a pixel this tool removed counts as empty even though the old picture showed it)
+            Func<int, int, bool> empty = (x, y) => x >= 0 && y >= 0 && x < W && y < H && after.Get(x, y) == 0 && (composite.Get(x, y) == 0 || layer.Get(x, y) != 0);
+
+            // 3b. "more natural": fix the shape as well as the shading
+            var nat = new NaturalInfo();
+            if (o.Natural) Naturalise(after, composite, area, inPart, top, thr, ramp, nat);
+            Func<int, bool> inNeck = y => nat.NeckTop >= 0 && y >= nat.NeckTop && y <= nat.NeckBottom;
 
             // edges against the background
             var bgEdge = new List<Point>();       // part pixels touching the background
@@ -294,13 +305,43 @@ namespace PokeSpriteCreator.Model
             if (o.Outline == OutlineMode.Edge && ramp.Outline != 0)
                 foreach (var p in bgEdge) { edgeSet.Add(p); inPart[p.Y * W + p.X] = false; }
 
+            // details drawn in a darker shade inside the part (a mouth, a nose, a crease) stay as they are:
+            // small clusters (up to 4 pixels) darker than the main colour that don't touch the part's edge
+            var detail = new HashSet<Point>();
+            {
+                Func<int, int, bool> darkInside = (x, y) =>
+                {
+                    if (!part(x, y) || L(after.Get(x, y)) >= L(ramp.Base) - 0.05) return false;
+                    foreach (var d in Four) if (!part(x + d.X, y + d.Y) && !edgeSet.Contains(new Point(x + d.X, y + d.Y))) return false;
+                    return true;
+                };
+                var seen = new HashSet<Point>();
+                for (int y = area.Top; y < area.Bottom; y++)
+                    for (int x = area.Left; x < area.Right; x++)
+                    {
+                        var p0 = new Point(x, y);
+                        if (seen.Contains(p0) || !darkInside(x, y)) continue;
+                        var cluster = new List<Point>(); var st = new Stack<Point>(); st.Push(p0); seen.Add(p0);
+                        while (st.Count > 0)
+                        {
+                            var q = st.Pop(); cluster.Add(q);
+                            for (int dy = -1; dy <= 1; dy++)
+                                for (int dx = -1; dx <= 1; dx++)
+                                {
+                                    var r = new Point(q.X + dx, q.Y + dy);
+                                    if (!seen.Contains(r) && darkInside(r.X, r.Y)) { seen.Add(r); st.Push(r); }
+                                }
+                        }
+                        if (cluster.Count <= 4) foreach (var q in cluster) detail.Add(q);
+                    }
+            }
+
             // 5. tones by distance to the lit and the shadowed side
-            var after = s.After;
             int underCount = 0;
             for (int y = area.Top; y < area.Bottom; y++)
                 for (int x = area.Left; x < area.Right; x++)
                 {
-                    if (!part(x, y)) continue;
+                    if (!part(x, y) || (detail.Contains(new Point(x, y)) && !inNeck(y))) continue;
                     int dl = 1; while (part(x + lv.X * dl, y + lv.Y * dl)) dl++;
                     int ds = 1; while (part(x - lv.X * ds, y - lv.Y * ds)) ds++;
                     int width = dl + ds - 1;
@@ -312,7 +353,13 @@ namespace PokeSpriteCreator.Model
                         int up = layer.Get(x, y - 1), up2 = y > 1 ? layer.Get(x, y - 2) : 0;
                         if (up != 0 && !part(x, y - 1) && !edgeSet.Contains(new Point(x, y - 1)) && up2 != 0) under = true;
                     }
-                    if (under) { tone = ramp.Under; underCount++; }
+                    if (inNeck(y))
+                    {
+                        // a neck (or anything tucked under a wider part of the same colour) is in that part's shadow:
+                        // a darker row right under it, then the shadow tone, with a sliver of light on the lit side
+                        tone = y == nat.NeckTop ? ramp.Under : (width >= 4 && dl == 2 ? ramp.Base : ramp.Shadow);
+                    }
+                    else if (under) { tone = ramp.Under; underCount++; }
                     else if (width <= 2) tone = (width == 2 && ds == 1) ? ramp.Shadow : ramp.Base;
                     else
                     {
@@ -356,7 +403,151 @@ namespace PokeSpriteCreator.Model
                 for (int x = 0; x < W; x++)
                     if (after.Get(x, y) != layer.Get(x, y)) { s.Changed++; s.Overlay.Set(x, y, after.Get(x, y)); }
             Explain(s, layer, inPart, part, bgEdge, outside, lv, o, underCount, counts, top);
+            if (detail.Count > 0)
+            {
+                int at2 = s.Notes.FindIndex(n => n.StartsWith("Changes ") || n.StartsWith("Nothing to change"));
+                s.Notes.Insert(at2 < 0 ? s.Notes.Count : at2, "Keeps " + detail.Count + " small detail pixel" + (detail.Count == 1 ? "" : "s") + " drawn in a darker shade (like a mouth or nose).");
+            }
+            // the "Changes N pixels" line goes last
+            int ci = s.Notes.FindIndex(n => n.StartsWith("Changes ") || n.StartsWith("Nothing to change"));
+            if (ci >= 0 && ci != s.Notes.Count - 1) { var c = s.Notes[ci]; s.Notes.RemoveAt(ci); s.Notes.Add(c); }
+            if (o.Natural)
+            {
+                int at = s.Notes.FindIndex(n => n.StartsWith("Changes ") || n.StartsWith("Nothing to change"));
+                if (at < 0) at = s.Notes.Count;
+                var nn = new List<string>();
+                if (nat.NeckTop >= 0)
+                    nn.Add("It's a narrower part tucked under a wider part of the same colour (like a neck under the head), so it's put in that part's shadow: a darker row right under it and the shadow tone below, with a little light on the lit side.");
+                if (nat.Narrowed > 0)
+                    nn.Add("The neck was nearly as wide as the head (" + nat.WidthBefore + " of " + nat.HeadWidth + " pixels), so it's narrowed to " + nat.WidthAfter + ". Necks are a bit over half as wide as the head.");
+                if (nat.Specks > 0) nn.Add("Removes " + nat.Specks + " stray dark pixel" + (nat.Specks == 1 ? "" : "s") + " inside it.");
+                if (nat.Gaps > 0) nn.Add("Fills " + nat.Gaps + " gap" + (nat.Gaps == 1 ? "" : "s") + " in its edge.");
+                if (nat.Bumps > 0) nn.Add("Smooths " + nat.Bumps + " one-pixel bump" + (nat.Bumps == 1 ? "" : "s") + " on its edge.");
+                if (nn.Count == 0) nn.Add("The shape looks fine, so only the shading changes.");
+                s.Notes.InsertRange(at, nn);
+            }
             return s;
+        }
+
+        class NaturalInfo
+        {
+            public int NeckTop = -1, NeckBottom = -1, HeadWidth, WidthBefore, WidthAfter, Narrowed, Specks, Gaps, Bumps;
+        }
+
+        /// <summary>
+        /// Shape fixes for "more natural": fills gaps and stray dark specks inside the part, smooths one-pixel bumps,
+        /// and finds a neck (a narrower stretch hanging under a wider mass of the same colour), narrowing it when it's
+        /// nearly as wide as the head. Changes only pixels in the box; updates the part mask.
+        /// </summary>
+        static void Naturalise(PixelImage after, PixelImage composite, Rectangle area, bool[] inPart, int top, double thr, ShadeRamp ramp, NaturalInfo nat)
+        {
+            int W = after.W, H = after.H;
+            Func<int, int, bool> part = (x, y) => x >= 0 && y >= 0 && x < W && y < H && inPart[y * W + x];
+            Func<int, bool> fam = c => Related(c, top) && L(c) >= thr;
+
+            // gaps and specks: a dark pixel with the part on all four sides, or an empty one with it on three
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var add = new List<Point>();
+                for (int y = area.Top; y < area.Bottom; y++)
+                    for (int x = area.Left; x < area.Right; x++)
+                    {
+                        if (part(x, y)) continue;
+                        int c = after.Get(x, y), n = 0;
+                        foreach (var d in Four) if (part(x + d.X, y + d.Y)) n++;
+                        bool darkSpeck = c != 0 && L(c) < thr && n == 4;
+                        bool gap = c == 0 && composite.Get(x, y) == 0 && n >= 3;
+                        if (darkSpeck || gap) { add.Add(new Point(x, y)); if (darkSpeck) nat.Specks++; else nat.Gaps++; }
+                    }
+                foreach (var p in add) { inPart[p.Y * W + p.X] = true; after.Set(p.X, p.Y, ramp.Base); }
+                if (add.Count == 0) break;
+            }
+
+            // one-pixel bumps sticking out of a solid edge (a 1-pixel-wide line keeps its tip)
+            var bumps = new List<Point>();
+            for (int y = area.Top; y < area.Bottom; y++)
+                for (int x = area.Left; x < area.Right; x++)
+                {
+                    if (!part(x, y)) continue;
+                    int n = 0; Point nb = Point.Empty;
+                    foreach (var d in Four) if (part(x + d.X, y + d.Y)) { n++; nb = new Point(x + d.X, y + d.Y); }
+                    if (n != 1) continue;
+                    int nn = 0;
+                    foreach (var d in Four) if (part(nb.X + d.X, nb.Y + d.Y)) nn++;
+                    if (nn >= 3) bumps.Add(new Point(x, y));
+                }
+            foreach (var p in bumps)
+            {
+                // becomes what's around it
+                var around = Four.Select(d => new Point(p.X + d.X, p.Y + d.Y)).Where(q => after.Inside(q.X, q.Y) && !part(q.X, q.Y))
+                                 .Select(q => after.Get(q.X, q.Y)).GroupBy(c => c).OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
+                inPart[p.Y * W + p.X] = false;
+                after.Set(p.X, p.Y, around);
+                nat.Bumps++;
+            }
+
+            // the whole part (also outside the box, for what's above it)
+            var comp = new bool[W * H];
+            var stack = new Stack<Point>();
+            for (int y = area.Top; y < area.Bottom; y++)
+                for (int x = area.Left; x < area.Right; x++)
+                    if (part(x, y) && !comp[y * W + x]) { comp[y * W + x] = true; stack.Push(new Point(x, y)); }
+            while (stack.Count > 0)
+            {
+                var q = stack.Pop();
+                foreach (var d in Four)
+                {
+                    int nx = q.X + d.X, ny = q.Y + d.Y;
+                    if (nx < 0 || ny < 0 || nx >= W || ny >= H || comp[ny * W + nx]) continue;
+                    bool inside = area.Contains(nx, ny) ? part(nx, ny) : fam(after.Get(nx, ny));
+                    if (!inside) continue;
+                    comp[ny * W + nx] = true; stack.Push(new Point(nx, ny));
+                }
+            }
+            var minX = new int[H]; var maxX = new int[H];
+            for (int y = 0; y < H; y++)
+            {
+                minX[y] = -1; maxX[y] = -1;
+                for (int x = 0; x < W; x++) if (comp[y * W + x]) { if (minX[y] < 0) minX[y] = x; maxX[y] = x; }
+            }
+            Func<int, int> width = y => y < 0 || y >= H || minX[y] < 0 ? 0 : maxX[y] - minX[y] + 1;
+
+            // the neck: the first row in the box that steps in by 2+ under a wider mass (3+ wide rows above)
+            for (int y = Math.Max(1, area.Top); y < area.Bottom; y++)
+            {
+                int wy = width(y), wa = width(y - 1);
+                if (wy == 0 || wa == 0 || wa - wy < 2) continue;
+                if (minX[y] < minX[y - 1] || maxX[y] > maxX[y - 1]) continue;   // hangs under it
+                int rows = 0, headW = 0;
+                for (int k = 1; k <= 8; k++) { int w = width(y - k); if (w >= wa - 1) rows++; headW = Math.Max(headW, w); }
+                if (rows < 3) continue;
+                nat.NeckTop = y; nat.HeadWidth = headW;
+                break;
+            }
+            if (nat.NeckTop < 0) return;
+            // down to where it widens again (shoulders, chest) or ends
+            int narrowest = width(nat.NeckTop);
+            nat.NeckBottom = nat.NeckTop;
+            for (int y = nat.NeckTop + 1; y < area.Bottom && width(y) > 0 && width(y) <= narrowest + 1; y++) { nat.NeckBottom = y; narrowest = Math.Min(narrowest, width(y)); }
+
+            // nearly as wide as the head: narrow it to about 60%, keeping its middle
+            int target = Math.Max(3, (int)Math.Round(nat.HeadWidth * 0.6));
+            for (int y = nat.NeckTop; y <= nat.NeckBottom; y++)
+            {
+                int w = width(y);
+                if (w <= target || w <= nat.HeadWidth * 0.7) continue;
+                if (nat.WidthBefore == 0) nat.WidthBefore = w;
+                int left = minX[y] + (w - target) / 2, right = left + target - 1;
+                int outsideL = minX[y] > 0 ? after.Get(minX[y] - 1, y) : 0, outsideR = maxX[y] < W - 1 ? after.Get(maxX[y] + 1, y) : 0;
+                for (int x = minX[y]; x <= maxX[y]; x++)
+                {
+                    if ((x >= left && x <= right) || !area.Contains(x, y) || !part(x, y)) continue;
+                    inPart[y * W + x] = false;
+                    after.Set(x, y, x < left ? outsideL : outsideR);
+                    nat.Narrowed++;
+                }
+                nat.WidthAfter = target;
+            }
         }
 
         static void Explain(ShadeSuggestion s, PixelImage before, bool[] inPart, Func<int, int, bool> part, List<Point> bgEdge,

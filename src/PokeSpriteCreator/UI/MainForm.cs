@@ -12,7 +12,7 @@ namespace PokeSpriteCreator.UI
     public class MainForm : Form
     {
         public const string AppName = "Poke Sprite Creator";
-        public const string Version = "0.5.0";
+        public const string Version = "0.5.1";
 
         readonly Editor E;
         readonly CanvasView _single, _left, _right;
@@ -66,7 +66,7 @@ namespace PokeSpriteCreator.UI
             center.Controls.Add(_tabBar);
 
             _dirs = new InGamePanel(E) { Dock = DockStyle.Right, Width = 322 };
-            _shade = new ShadePanel(E) { Dock = DockStyle.Right, Width = 322, Visible = false };
+            _shade = new ShadePanel(E) { Dock = DockStyle.Right, Width = 342, Visible = false };   // room for its scroll bar
             var left = new Panel { Dock = DockStyle.Left, Width = 318, Tag = "panel" };
             _layers = new LayersPanel(E) { Dock = DockStyle.Fill };
             _colors = new ColorPanel(E) { Dock = DockStyle.Bottom };
@@ -256,6 +256,11 @@ namespace PokeSpriteCreator.UI
    where it meets the background, the shadow tone on the side away from the
    light, a thin highlight one pixel in from the lit edge, and a darker row
    under anything overlapping it from above. It uses your own colours.
+   ""Fix the shape too (more natural)"" also lets it change the shape: a neck
+   (a narrower part under a wider part of the same colour) goes into the head's
+   shadow and is narrowed if it's nearly as wide as the head; gaps in the edge
+   are filled, one-pixel bumps smoothed and stray dark pixels removed.
+   Small details drawn in a darker shade (a mouth, a nose) are always kept.
    Change the light, outline and options to taste; Apply (Enter) puts it on the
    selected layer, Ctrl+Z takes it off, Esc clears the box.
 
