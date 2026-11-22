@@ -388,6 +388,80 @@ namespace PokeSpriteCreator
                 File.WriteAllText(Path.Combine(dir, "neck_notes.txt"), "BOX " + nBox.Area + "\r\n" + string.Join("\r\n", nBox.Notes.ToArray()) + "\r\n\r\nCLICK " + nClick.Area + "\r\n" + string.Join("\r\n", nClick.Notes.ToArray()));
             }
 
+            // ---- a solid black shirt (Mike's custom sprite): shaded upwards with the sprite's dark greys
+            {
+                string[] shirtRows = {
+                    "..................BDDD.BD.DDD.........................",
+                    "...................BBBDBBDBBBAA.......................",
+                    "................DDDDBBBBBBBDAA........................",
+                    "..............DDBBBBBBBBBBBBBBAA......................",
+                    ".............DBBBBDBBBBBBDBBBBBBAA....................",
+                    ".............DDDDDBEHHHDBDBDBBBBBBA...................",
+                    "...............ABDCIEDEIDCBDBBBDABA...................",
+                    "..............DBDCCDHHHDCCDCBDBBA.....................",
+                    ".............DBBDKBBBBBCMKCCDDABBD....................",
+                    "............DB.DBBCCCCCBBBKKCDDBBBD...................",
+                    "...............AKIHHHIKCCCBBKDDDABBD..................",
+                    "...............AHHAAABHHKMCCDDDADAA...................",
+                    "..............AHAABIBGBBHHBDBDAA.D....................",
+                    "..............AA.AGHAFGGGAJGBBMA......................",
+                    ".................BMJGFFFFAHFDBD.......................",
+                    "................BBAGFFFFFGGFGBD.......................",
+                    "................B.AAGGGGGGGAB.BD......................",
+                    "...................AFFOFFFLGBB.B......................",
+                    "..................AAABGGGGGGAA........................",
+                    ".................AAAAALLFAAAAAAA......................",
+                    "................AAAAAALLFAAAAAAAAAA...................",
+                    "...............AAAAAAAAAAAAAAAAAAAAAAA................",
+                    ".............AAAAAAAAAAAAAAAAAAAAAAAAAAB..............",
+                    "............AAAAAAAAAAAAIAAAAAACCCCCBAAFFM............",
+                    "............AAAAAAAAAAAHAAAAIHKIAAIKKBIEGGB...........",
+                    "...........AAAAAAAAAAAAEHAIHHBBGGGBBEHHHBGB...........",
+                    ".........BBAAAAAAAAAAAAHAKHHBGGFFLBEHHHKAB............",
+                    "........BFFGAAAA..AAAAAHABKHBFFLBBBHHGKAB.............",
+                    "........BFOFGA....AAAAAAIAABMBBBGBBKKAA...............",
+                    "........BFOFFGA...AAAAAAAIHAGGAANEAAA.................",
+                    ".........BBFFLB...AAAAAAAAAHAAA.......................",
+                    "...........BFFGB.AAAAAAAAAAA..........................",
+                    "............BFFLBAAAAAAAAAAAA.........................",
+                    ".............BFGLAAAAAAAAAAAAA........................",
+                    ".............BFMLAAAAAAAAAAAAA........................",
+                    ".............BFFLAAAAAAAAAAAAE........................",
+                    ".............BFLBECECCCJECCCEE........................",
+                    "............ABFLBAIJCCCJECCCCEE.......................",
+                    ".............BFBBCIJCCCJECCCCEE.......................",
+                    "..............AECCIJCCCJICCCCEJE......................",
+                    "..............ECCIJJCCCJJECCCCEE......................",
+                    "..............ECCIJECNCEJECCCCECE.....................",
+                    "..............ECCIJECNCEJECCCCECA.....................",
+                    ".............ECCCCECCNCEJECCCCCEA.....................",
+                    ".............ECCCCCCCCECECCCCCCECA....................",
+                    ".............ECCCCCCCCECCCCCCCCECA....................",
+                    "............ECEECCCCCCNCCCCCCCCECA...................."
+                };
+                var shirtPal = new Dictionary<char, int> { { 'A', 0x000000 }, { 'B', 0x634A42 }, { 'C', 0xA02830 }, { 'D', 0x292929 }, { 'E', 0x5A5A6B }, { 'F', 0xFFD6BD }, { 'G', 0xDEA57B }, { 'H', 0xEFEFFF }, { 'I', 0x94949C }, { 'J', 0xCECEDE }, { 'K', 0xCE5252 }, { 'L', 0xF0C098 }, { 'M', 0xAD8473 }, { 'N', 0x212942 }, { 'O', 0xFFE8D0 } };
+                var shirt = new PixelImage(shirtRows[0].Length, shirtRows.Length);
+                for (int y = 0; y < shirtRows.Length; y++)
+                    for (int x = 0; x < shirtRows[y].Length; x++)
+                        if (shirtRows[y][x] != '.') { int v = shirtPal[shirtRows[y][x]]; shirt.Set(x, y, PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255)); }
+                Func<int, int> srgb = v => PixelImage.Rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+                var shirtColors = new HashSet<int>(shirt.Px.Where(c => c != 0));
+                var shirtBox = new Rectangle(5, 15, 42, 24);
+                var sh = ShadingHelper.Suggest(shirt, shirt, shirtBox, shirtColors, new ShadeOptions());
+                shirt.Scale(8).Save(Path.Combine(dir, "shirt_before.png"));
+                sh.After.Scale(8).Save(Path.Combine(dir, "shirt_after.png"));
+                File.WriteAllText(Path.Combine(dir, "shirt_notes.txt"), sh.Part.Name + " " + PixelImage.Hex(sh.Part.Main) + "\r\n" + string.Join("\r\n", sh.Notes.ToArray()));
+                int black = srgb(0x000000);
+                Check(sh.Part.Main == black, "the black shirt is picked as the part (" + sh.Part.Name + " " + PixelImage.Hex(sh.Part.Main) + ")");
+                Check(sh.Ramp.Base == srgb(0x292929) && sh.Ramp.Highlight == srgb(0x5A5A6B) && sh.Ramp.Shadow == black, "black is shaded with the sprite's dark greys (base " + PixelImage.Hex(sh.Ramp.Base) + ", highlight " + PixelImage.Hex(sh.Ramp.Highlight) + ")");
+                Check(sh.After.Get(20, 27) != black && sh.After.Colors().IsSubsetOf(shirtColors), "the inside of the shirt is no longer flat black, and no colours are added");
+                Check(sh.After.Get(12, 23) == black && sh.After.Get(13, 22) == black, "its edge stays black (the outline)");
+                Check(sh.After.Get(19, 17) == black && sh.After.Get(18, 18) == black, "the chin's black outline isn't touched");
+                bool restSame = true;
+                for (int i = 0; i < shirt.Px.Length; i++) if (shirt.Px[i] != black && sh.After.Px[i] != shirt.Px[i]) restSame = false;
+                Check(restSame, "only black pixels change (skin, trousers and Pokeball left alone)");
+            }
+
             // ---- tabs and comparing
             var et = new Editor(new Settings());
             var docA = new SpriteDocument(g5, SpriteKind.Front, null, g5.DefaultLayout(SpriteKind.Front)); docA.Layers.Add(docA.NewLayer("Paint"));

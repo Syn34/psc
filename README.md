@@ -55,6 +55,10 @@ it, and the right-hand panel suggests shading for it the way a pixel artist woul
   they are. **Part** lists what's in the box; it starts with the biggest part that has a darker shade to shade with.
   Shades of one part must be close in hue, in strength of colour and in lightness, so brown hair, a red headband and
   skin are never treated as one thing.
+- **Solid black parts** (a black shirt) count as a part even next to lighter ones; thin black outlines don't. Black can't
+  get darker, so it's shaded upwards like Gen 5 black clothes: the inside becomes the sprite's darkest grey, black stays
+  for the outline and the shadow side, and a lighter grey goes one pixel in from the lit edge. The black outlines of
+  other parts (a chin, a hand, a Pokéball) are left alone, even where they touch it.
 
 The panel shows the part now and suggested, the colours used (outline, under, shadow, base, highlight) and a list of
 what it changes and why (no outline, shaded on both sides, highlight too wide, too many shades…). The suggestion is also
